@@ -9,6 +9,8 @@ import ProxyCore
 final class TCPRelay: Closable {
     /// How long to wait for the app to speak first before connecting without its data.
     private static let firstDataWait: DispatchTimeInterval = .milliseconds(150)
+    /// How long one side may stay open after the other has finished.
+    private static let halfCloseTimeout: DispatchTimeInterval = .seconds(60)
 
     private let flow: NEAppProxyTCPFlow
     private var target: Address
@@ -52,8 +54,9 @@ final class TCPRelay: Closable {
         }
         let tunnel = TunnelConnection(server: server, target: target, queue: queue)
         tunnel.onFailure = { [weak self] error in
-            self?.events?.relayFailed(error)
-            self?.close(error)
+            guard let self, !self.closed else { return }
+            self.events?.relayFailed(error)
+            self.close(error)
         }
         self.tunnel = tunnel
         tunnel.start(sending: data)
@@ -117,7 +120,10 @@ final class TCPRelay: Closable {
     }
 
     private func closeIfDone() {
-        guard appDone, serverDone else { return }
+        guard appDone, serverDone else {
+            queue.asyncAfter(deadline: .now() + Self.halfCloseTimeout) { [self] in close(nil) }
+            return
+        }
         close(nil)
     }
 
@@ -144,6 +150,7 @@ final class UDPRelay: Closable {
     private weak var events: RelayEvents?
     private let queue = DispatchQueue(label: "udp-relay")
     private let tunnel: PacketTunnel
+    private var directConnections: [Address: NWConnection] = [:]
     private var lastActivity = Date()
     private var idleTimer: DispatchSourceTimer?
     private var closed = false
@@ -157,6 +164,7 @@ final class UDPRelay: Closable {
     func start() {
         flow.open(withLocalFlowEndpoint: nil) { [self] error in
             queue.async { [self] in
+                guard !closed else { return }
                 if let error {
                     return close(error)
                 }
@@ -164,8 +172,9 @@ final class UDPRelay: Closable {
                     self?.deliver(payload, from: source)
                 }
                 tunnel.onFailure = { [weak self] error in
-                    self?.events?.relayFailed(error)
-                    self?.close(error)
+                    guard let self, !self.closed else { return }
+                    self.events?.relayFailed(error)
+                    self.close(error)
                 }
                 tunnel.start()
                 startIdleTimer()
@@ -184,7 +193,11 @@ final class UDPRelay: Closable {
                 lastActivity = Date()
                 var sent = 0
                 for (payload, endpoint) in datagrams {
-                    guard let target = Address(endpoint), !target.isLocal else { continue }
+                    guard let target = Address(endpoint) else { continue }
+                    guard !target.isLocal else {
+                        sendDirectly(payload, to: target)
+                        continue
+                    }
                     tunnel.send(payload, to: target)
                     sent += payload.count
                 }
@@ -194,11 +207,37 @@ final class UDPRelay: Closable {
         }
     }
 
-    private func deliver(_ payload: Data, from source: Address) {
+    private func deliver(_ payload: Data, from source: Address, throughServer: Bool = true) {
         guard !closed else { return }
         lastActivity = Date()
-        events?.relayed(sent: 0, received: payload.count)
+        if throughServer {
+            events?.relayed(sent: 0, received: payload.count)
+        }
         flow.writeDatagrams([(payload, source.endpoint)]) { _ in }
+    }
+
+    /// The local network can't be reached from the server, so its packets (LAN discovery,
+    /// multicast, a call's local candidates) go straight there, each target on its own socket.
+    private func sendDirectly(_ payload: Data, to target: Address) {
+        if let connection = directConnections[target] {
+            connection.send(content: payload, completion: .idempotent)
+            return
+        }
+        let connection = NWConnection(to: target.endpoint, using: .udp)
+        directConnections[target] = connection
+        connection.start(queue: queue)
+        connection.send(content: payload, completion: .idempotent)
+        receiveDirectly(connection, from: target)
+    }
+
+    private func receiveDirectly(_ connection: NWConnection, from source: Address) {
+        connection.receiveMessage { [weak self] content, _, _, error in
+            guard let self, !self.closed, error == nil else { return }
+            if let content {
+                self.deliver(content, from: source, throughServer: false)
+            }
+            self.receiveDirectly(connection, from: source)
+        }
     }
 
     private func startIdleTimer() {
@@ -221,6 +260,9 @@ final class UDPRelay: Closable {
         closed = true
         idleTimer?.cancel()
         tunnel.cancel()
+        for connection in directConnections.values {
+            connection.cancel()
+        }
         flow.closeReadWithError(error)
         flow.closeWriteWithError(error)
         events?.relayClosed(self)
