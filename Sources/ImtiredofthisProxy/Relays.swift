@@ -149,7 +149,9 @@ final class UDPRelay: Closable {
     private let flow: NEAppProxyUDPFlow
     private weak var events: RelayEvents?
     private let queue = DispatchQueue(label: "udp-relay")
+    private let server: Server
     private let tunnel: PacketTunnel
+    private var lookups: [ObjectIdentifier: DNSLookup] = [:]
     private var directConnections: [Address: NWConnection] = [:]
     private var lastActivity = Date()
     private var idleTimer: DispatchSourceTimer?
@@ -158,6 +160,7 @@ final class UDPRelay: Closable {
     init(flow: NEAppProxyUDPFlow, server: Server, events: RelayEvents) {
         self.flow = flow
         self.events = events
+        self.server = server
         tunnel = PacketTunnel(server: server, queue: queue)
     }
 
@@ -194,6 +197,11 @@ final class UDPRelay: Closable {
                 var sent = 0
                 for (payload, endpoint) in datagrams {
                     guard let target = Address(endpoint) else { continue }
+                    guard target.port != 53 else {
+                        resolve(payload, askedOf: target)
+                        sent += payload.count
+                        continue
+                    }
                     guard !target.isLocal else {
                         sendDirectly(payload, to: target)
                         continue
@@ -214,6 +222,20 @@ final class UDPRelay: Closable {
             events?.relayed(sent: 0, received: payload.count)
         }
         flow.writeDatagrams([(payload, source.endpoint)]) { _ in }
+    }
+
+    /// DNS goes through the server to a public resolver, whatever the app asked (often the router,
+    /// whose answers for blocked names may be false). The answer comes back as if from the one asked.
+    private func resolve(_ query: Data, askedOf origin: Address) {
+        let lookup = DNSLookup(server: server, queue: queue)
+        let id = ObjectIdentifier(lookup)
+        lookups[id] = lookup
+        lookup.resolve(query) { [weak self] answer in
+            guard let self else { return }
+            self.lookups[id] = nil
+            guard let answer else { return }
+            self.deliver(answer, from: origin)
+        }
     }
 
     /// The local network can't be reached from the server, so its packets (LAN discovery,

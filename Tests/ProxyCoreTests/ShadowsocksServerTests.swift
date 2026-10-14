@@ -161,4 +161,18 @@ struct ShadowsocksServerTests {
         #expect(received.allSatisfy { $0.1 == target })
         queue.sync { tunnel.cancel() }
     }
+
+    @Test func dnsThroughTheServer() async throws {
+        let process = try ServerProcess(method: .blake3AES128GCM, password: password(for: .blake3AES128GCM))
+        let queue = DispatchQueue(label: "dns")
+        // A query for discord.com's A record.
+        let query = Data([0x12, 0x34, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 7]) + Data("discord".utf8) + Data([3]) + Data("com".utf8) + Data([0, 0, 1, 0, 1])
+        let lookup = DNSLookup(server: process.server, queue: queue)
+        let answer: Data? = await withCheckedContinuation { continuation in
+            queue.async { lookup.resolve(query) { continuation.resume(returning: $0) } }
+        }
+        let answered = try #require(answer)
+        #expect(answered.prefix(2) == Data([0x12, 0x34]))
+        #expect(answered.count > query.count)
+    }
 }

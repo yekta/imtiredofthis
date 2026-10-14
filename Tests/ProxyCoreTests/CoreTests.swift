@@ -189,3 +189,13 @@ private func pattern(_ count: Int) -> Data {
         #expect(!decoder.isBetweenChunks)
     }
 }
+
+@Suite struct DNSFramingTests {
+    @Test func framesAndReadsMessages() {
+        let query = Data((0..<300).map { UInt8($0 % 256) })
+        let framed = DNSLookup.framed(query)
+        #expect(framed.count == 302)
+        #expect(DNSLookup.message(in: framed) == query)
+        #expect(DNSLookup.message(in: framed.prefix(100)) == nil)
+    }
+}

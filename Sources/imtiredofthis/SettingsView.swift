@@ -444,7 +444,7 @@ private struct AppsSection: View {
         } header: {
             Text("Apps")
         } footer: {
-            Text("Only these apps and their helpers go through the server, over TCP and UDP. Everything else, and anything on your own network, connects as usual.")
+            Text("Only these apps and their helpers go through the server, over TCP and UDP, DNS included. Everything else connects as usual. An app that was already open needs a restart.")
                 .settingsFooter()
         }
     }

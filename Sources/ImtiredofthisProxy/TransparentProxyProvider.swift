@@ -74,8 +74,9 @@ final class TransparentProxyProvider: NETransparentProxyProvider, NEAppProxyUDPF
     }
 
     func handleNewUDPFlow(_ flow: NEAppProxyUDPFlow, initialRemoteFlowEndpoint remoteEndpoint: Network.NWEndpoint) -> Bool {
+        // DNS is taken even to the local network: the router's answers may be false.
         guard let server = server(for: flow),
-              let target = Address(remoteEndpoint), !target.isLocal else { return false }
+              let target = Address(remoteEndpoint), !target.isLocal || target.port == 53 else { return false }
         return relay(flow, server: server)
     }
 
