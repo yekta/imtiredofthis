@@ -1,0 +1,106 @@
+name: Release
+
+# On every push to main that changes the app: tests it, builds it, signs it with the Developer ID
+# certificate, notarizes it and publishes it as a GitHub release. macOS only loads a signed proxy
+# extension, so without the signing secrets and the provisioning profiles in Resources/Profiles
+# nothing is published. The version is the one scripts/release-version.sh gives the commit.
+on:
+  push:
+    branches: [main]
+    paths:
+      - Sources/**
+      - Resources/**
+      - Package.swift
+      - VERSION
+      - scripts/**
+      - .github/workflows/release.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: macos-26
+    timeout-minutes: 60
+    env:
+      SIGNED: ${{ secrets.APPLE_CERTIFICATE != '' && secrets.APPLE_API_KEY != '' }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Check signing
+        run: |
+          if [ "$SIGNED" = "true" ] && [ -f Resources/Profiles/imtiredofthis.provisionprofile ] \
+              && [ -f Resources/Profiles/imtiredofthis-proxy.provisionprofile ]; then
+            echo "READY=true" >> "$GITHUB_ENV"
+          else
+            echo "::notice::Not published: releases need the signing secrets and the provisioning profiles in Resources/Profiles."
+          fi
+
+      - name: Version
+        if: env.READY == 'true'
+        run: echo "VERSION=$(scripts/release-version.sh)" >> "$GITHUB_ENV"
+
+      - name: Toolchain
+        run: |
+          xcodebuild -version
+          swift --version
+
+      - name: Test
+        run: swift test
+
+      - name: Import the signing certificate
+        if: env.READY == 'true'
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+        run: |
+          KEYCHAIN="$RUNNER_TEMP/signing.keychain-db"
+          KEYCHAIN_PASSWORD="$(uuidgen)"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security set-keychain-settings "$KEYCHAIN"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          echo "$APPLE_CERTIFICATE" | base64 --decode > "$RUNNER_TEMP/certificate.p12"
+          security import "$RUNNER_TEMP/certificate.p12" -k "$KEYCHAIN" -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN" >/dev/null
+          security list-keychains -d user -s "$KEYCHAIN" login.keychain-db
+          echo "SIGN_IDENTITY=Developer ID Application: Avenge Media LLC (44R7KF7645)" >> "$GITHUB_ENV"
+
+      - name: Build the app
+        if: env.READY == 'true'
+        run: scripts/build-app.sh
+
+      - name: Notarize the app
+        if: env.READY == 'true'
+        env:
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER_ID: ${{ secrets.APPLE_API_ISSUER_ID }}
+        run: |
+          APP=build/imtiredofthis.app
+          echo "$APPLE_API_KEY" > "$RUNNER_TEMP/api-key.p8"
+          CREDENTIALS=(--key "$RUNNER_TEMP/api-key.p8" --key-id "$APPLE_API_KEY_ID" --issuer "$APPLE_API_ISSUER_ID")
+          ditto -c -k --keepParent "$APP" "$RUNNER_TEMP/notarize.zip"
+          SUBMISSION="$(xcrun notarytool submit "$RUNNER_TEMP/notarize.zip" "${CREDENTIALS[@]}" --output-format json | jq -r .id)"
+          STATUS=0
+          xcrun notarytool wait "$SUBMISSION" "${CREDENTIALS[@]}" --timeout 30m || STATUS=$?
+          xcrun notarytool log "$SUBMISSION" "${CREDENTIALS[@]}" || true
+          [ "$STATUS" -eq 0 ] || exit "$STATUS"
+          xcrun stapler staple "$APP"
+          spctl --assess --type execute --verbose "$APP"
+
+      - name: Publish
+        if: env.READY == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ditto -c -k --keepParent build/imtiredofthis.app imtiredofthis.zip
+          gh release create "v$VERSION" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "v$VERSION" \
+            --notes "Install or update with \`curl -fsSL https://raw.githubusercontent.com/yekta/imtiredofthis/main/scripts/install.sh | sh\`." \
+            --generate-notes imtiredofthis.zip

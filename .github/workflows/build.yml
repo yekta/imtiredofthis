@@ -1,0 +1,47 @@
+name: Build
+
+# Tests and builds the app on pull requests that change it. Main is built and published by
+# release.yml.
+on:
+  pull_request:
+    paths:
+      - Sources/**
+      - Tests/**
+      - Resources/**
+      - Package.swift
+      - scripts/**
+      - .github/workflows/build.yml
+  workflow_dispatch:
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: macos-26
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Toolchain
+        run: |
+          xcodebuild -version
+          swift --version
+
+      - name: Test
+        run: swift test
+
+      - name: Build the app
+        run: scripts/build-app.sh
+
+      - name: Zip the app
+        run: ditto -c -k --keepParent build/imtiredofthis.app imtiredofthis.zip
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: imtiredofthis
+          path: imtiredofthis.zip
+          retention-days: 7
