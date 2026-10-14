@@ -119,21 +119,25 @@ public struct Address: Hashable, Sendable, CustomStringConvertible {
     public var isLocal: Bool {
         switch host {
         case let .ipv4(address):
-            let b = [UInt8](address.rawValue)
-            return b[0] == 0 || b[0] == 10 || b[0] == 127 || b[0] >= 224
-                || (b[0] == 100 && b[1] & 0xC0 == 64)
-                || (b[0] == 169 && b[1] == 254)
-                || (b[0] == 172 && b[1] & 0xF0 == 16)
-                || (b[0] == 192 && b[1] == 168)
+            let bytes = [UInt8](address.rawValue)
+            switch (bytes[0], bytes[1]) {
+            case (0, _), (10, _), (127, _), (224..., _), (100, 64...127), (169, 254), (172, 16...31), (192, 168):
+                return true
+            default:
+                return false
+            }
         case let .ipv6(address):
             if let mapped = address.asIPv4 {
                 return Address(host: .ipv4(mapped), port: port).isLocal
             }
-            let b = [UInt8](address.rawValue)
-            return address == .loopback || address == .any
-                || b[0] == 0xFF
-                || b[0] & 0xFE == 0xFC
-                || (b[0] == 0xFE && b[1] & 0xC0 == 0x80)
+            guard address != .loopback, address != .any else { return true }
+            let bytes = [UInt8](address.rawValue)
+            switch (bytes[0], bytes[1]) {
+            case (0xFF, _), (0xFC...0xFD, _), (0xFE, 0x80...0xBF):
+                return true
+            default:
+                return false
+            }
         case let .name(name):
             let name = name.lowercased()
             return name == "localhost" || name.hasSuffix(".localhost") || name.hasSuffix(".local")

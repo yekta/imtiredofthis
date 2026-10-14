@@ -1,7 +1,7 @@
 import Foundation
 import Network
 import Testing
-@testable import ProxyCore
+@preconcurrency @testable import ProxyCore
 
 /// shadowsocks-rust's server, which these tests talk to (`brew install shadowsocks-rust`). They
 /// are skipped without it.

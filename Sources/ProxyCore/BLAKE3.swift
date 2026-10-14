@@ -151,7 +151,9 @@ public struct BLAKE3 {
     }
 
     private static func compress(_ chainingValue: [UInt32], _ block: [UInt32], _ counter: UInt64, _ blockLength: UInt32, _ flags: UInt32) -> [UInt32] {
-        var state = chainingValue + iv.prefix(4) + [UInt32(truncatingIfNeeded: counter), UInt32(truncatingIfNeeded: counter >> 32), blockLength, flags]
+        var state = chainingValue
+        state.append(contentsOf: iv.prefix(4))
+        state.append(contentsOf: [UInt32(truncatingIfNeeded: counter), UInt32(truncatingIfNeeded: counter >> 32), blockLength, flags])
         var message = block
         for round in 0..<7 {
             mix(&state, 0, 4, 8, 12, message[0], message[1])
@@ -189,8 +191,12 @@ public struct BLAKE3 {
 
     private static func words(_ data: Data) -> [UInt32] {
         let bytes = [UInt8](data)
-        return stride(from: 0, to: bytes.count, by: 4).map { i in
-            UInt32(bytes[i]) | UInt32(bytes[i + 1]) << 8 | UInt32(bytes[i + 2]) << 16 | UInt32(bytes[i + 3]) << 24
+        return stride(from: 0, to: bytes.count, by: 4).map { (i: Int) -> UInt32 in
+            var word: UInt32 = 0
+            for j in (0..<4).reversed() {
+                word = word << 8 | UInt32(bytes[i + j])
+            }
+            return word
         }
     }
 }
