@@ -8,11 +8,17 @@ struct SettingsView: View {
     static let size = NSSize(width: 420, height: 620)
 
     @Bindable var model: AppModel
+    /// Set when the switch is flipped before the server and apps are in.
+    @State private var showsMissingSteps = false
 
     var body: some View {
         Form {
             Section {
-                Header(model: model)
+                Header(model: model, showsMissingSteps: $showsMissingSteps)
+            }
+
+            if !model.canTurnOn {
+                GettingStartedSection(model: model, showsMissingSteps: showsMissingSteps)
             }
 
             SetupSection(proxy: model.proxy)
@@ -78,6 +84,7 @@ struct SettingsView: View {
 
 private struct Header: View {
     @Bindable var model: AppModel
+    @Binding var showsMissingSteps: Bool
 
     var body: some View {
         HStack(spacing: 12) {
@@ -102,11 +109,17 @@ private struct Header: View {
                     .controlSize(.small)
             }
             Toggle("Proxy", isOn: Binding(
-                get: { model.proxy.isEnabled },
-                set: { model.setEnabled($0) }
+                get: { model.proxy.isEnabled || model.proxy.isTurningOn },
+                set: { enabled in
+                    guard !enabled || model.canTurnOn else {
+                        showsMissingSteps = true
+                        return
+                    }
+                    model.setEnabled(enabled)
+                }
             ))
             .labelsHidden()
-            .disabled(model.proxy.isBusy || (!model.proxy.isEnabled && !model.canTurnOn))
+            .disabled(model.proxy.isBusy)
         }
         .padding(.vertical, 2)
     }
@@ -115,15 +128,17 @@ private struct Header: View {
         let proxy = model.proxy
         switch proxy.setup {
         case .installing: return ("Installing the proxy…", .orange)
-        case .needsApproval: return ("Waiting for you to allow it", .orange)
+        case .needsApproval: return ("Allow it in System Settings", .orange)
         case .needsApplicationsFolder: return ("Needs to be in Applications", .orange)
         case .needsRestart: return ("Restart your Mac to finish", .orange)
         case .failed: return ("Couldn't install the proxy", .red)
         case .ready: break
         }
-        guard model.validServer != nil else { return ("Add your server below", .secondary) }
-        guard !model.config.apps.isEmpty else { return ("Add the apps to route below", .secondary) }
-        guard proxy.isEnabled else { return ("Off", .secondary) }
+        if proxy.isAskingToAddConfiguration {
+            return ("Click Allow on macOS's popup", .orange)
+        }
+        guard model.canTurnOn else { return ("Set it up below to turn it on", .secondary) }
+        guard proxy.isEnabled else { return proxy.isTurningOn ? ("Turning on…", .orange) : ("Off", .secondary) }
         switch proxy.status {
         case .connected:
             guard proxy.isServerReachable else { return ("Can't reach the server", .red) }
@@ -146,8 +161,8 @@ private struct SetupSection: View {
         switch proxy.setup {
         case .needsApproval:
             Notice(
-                title: "Allow the proxy",
-                detail: "In System Settings, under Login Items & Extensions → Network Extensions, turn on imtiredofthis. It carries the chosen apps' connections to your server.",
+                title: "Allow imtiredofthis in System Settings",
+                detail: "macOS asks once. Click Open System Settings on its popup, turn on imtiredofthis and enter your password. Without the popup: System Settings → General → Login Items & Extensions → Extensions → By Category → ⓘ next to Network Extensions.",
                 color: .orange,
                 action: ("Open System Settings", proxy.openApprovalSettings)
             )
@@ -162,7 +177,63 @@ private struct SetupSection: View {
         case let .failed(message):
             Notice(title: "Couldn't install the proxy", detail: message, color: .red)
         case .ready, .installing:
-            EmptyView()
+            if proxy.isAskingToAddConfiguration {
+                Notice(
+                    title: "Click Allow",
+                    detail: "macOS asks once whether imtiredofthis may add its proxy configuration. Click Allow on that popup, and it turns on.",
+                    color: .orange
+                )
+            }
+        }
+    }
+}
+
+/// What to do before the switch can turn on, ticked off as it gets done.
+private struct GettingStartedSection: View {
+    let model: AppModel
+    let showsMissingSteps: Bool
+
+    var body: some View {
+        Section {
+            Step(number: 1, title: "Paste your server's ss:// link", detail: "In Server, below, then click Save.",
+                 isDone: model.validServer != nil, isMissing: showsMissingSteps)
+            Step(number: 2, title: "Add the apps to send through it", detail: "In Apps, below: Add App…, then Discord, for example.",
+                 isDone: !model.config.apps.isEmpty, isMissing: showsMissingSteps)
+            Step(number: 3, title: "Turn it on", detail: "With the switch above. The first time, macOS asks you to allow it.",
+                 isDone: false, isMissing: false)
+        } header: {
+            Text("Get Started")
+        } footer: {
+            if showsMissingSteps {
+                Text("Do steps 1 and 2 first, then the switch turns on.")
+                    .font(.callout)
+                    .foregroundStyle(.orange)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+    }
+}
+
+private struct Step: View {
+    let number: Int
+    let title: String
+    let detail: String
+    let isDone: Bool
+    let isMissing: Bool
+
+    var body: some View {
+        Label {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .strikethrough(isDone)
+                    .foregroundStyle(isDone ? .secondary : .primary)
+                Text(detail)
+                    .foregroundStyle(.secondary)
+            }
+        } icon: {
+            Image(systemName: isDone ? "checkmark.circle.fill" : "\(number).circle")
+                .foregroundStyle(isDone ? .green : isMissing ? .orange : .secondary)
+                .font(.title3)
         }
     }
 }

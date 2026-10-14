@@ -26,6 +26,10 @@ final class ProxyController: NSObject {
     /// Whether the user has turned the proxy on; macOS keeps it connected while it is.
     private(set) var isEnabled = false
     private(set) var isBusy = false
+    /// Turning on, which may wait for the user to allow the extension and the configuration.
+    private(set) var isTurningOn = false
+    /// Waiting on macOS's "add proxy configurations" alert, the first time.
+    private(set) var isAskingToAddConfiguration = false
     private(set) var error: String?
     private(set) var upload: Double = 0
     private(set) var download: Double = 0
@@ -78,9 +82,12 @@ final class ProxyController: NSObject {
     func setEnabled(_ enabled: Bool) async {
         guard !isBusy else { return }
         isBusy = true
+        isTurningOn = enabled
         changed()
         defer {
             isBusy = false
+            isTurningOn = false
+            isAskingToAddConfiguration = false
             changed()
             if needsApply {
                 needsApply = false
@@ -92,9 +99,11 @@ final class ProxyController: NSObject {
                 try await activate()
             }
             guard enabled || manager != nil else { return }
+            isAskingToAddConfiguration = self.manager == nil
             let manager = manager ?? NETransparentProxyManager()
             try configure(manager, config: config(), enabled: enabled)
             try await manager.saveToPreferences()
+            isAskingToAddConfiguration = false
             try await manager.loadFromPreferences()
             adopt(manager)
             if enabled {
