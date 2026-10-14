@@ -15,7 +15,7 @@ final class AppModel {
         didSet {
             guard config != oldValue else { return }
             save()
-            Task { await proxy.apply(config) }
+            Task { await proxy.apply() }
             onChange?()
         }
     }
@@ -33,6 +33,7 @@ final class AppModel {
         config = defaults.data(forKey: Key.config).flatMap { try? JSONDecoder().decode(ProxyConfig.self, from: $0) } ?? ProxyConfig()
         isFirstLaunch = !defaults.bool(forKey: Key.hasLaunched)
         defaults.set(true, forKey: Key.hasLaunched)
+        proxy.config = { [unowned self] in config }
     }
 
     func start() {
@@ -57,7 +58,7 @@ final class AppModel {
     }
 
     func setEnabled(_ enabled: Bool) {
-        Task { await proxy.setEnabled(enabled, config: config) }
+        Task { await proxy.setEnabled(enabled) }
     }
 
     func setLaunchAtLogin(_ enabled: Bool) {

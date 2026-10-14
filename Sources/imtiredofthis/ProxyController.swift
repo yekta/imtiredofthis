@@ -35,8 +35,12 @@ final class ProxyController: NSObject {
     private(set) var serverError: String?
 
     @ObservationIgnored var onChange: (() -> Void)?
+    /// The config as it is now, read when it is saved, since turning on can wait on the user.
+    @ObservationIgnored var config: () -> ProxyConfig = { ProxyConfig() }
     @ObservationIgnored private var manager: NETransparentProxyManager?
     @ObservationIgnored private var statusObserver: NSObjectProtocol?
+    @ObservationIgnored private var configurationObserver: NSObjectProtocol?
+    @ObservationIgnored private var needsApply = false
     @ObservationIgnored private var activations: [CheckedContinuation<Void, Error>] = []
     @ObservationIgnored private var lastStats: (stats: ProxyStats, at: Date)?
     @ObservationIgnored private var monitorTimer: Timer?
@@ -47,19 +51,41 @@ final class ProxyController: NSObject {
     /// Picks up the proxy as it was left, and brings the extension up to date with this version
     /// of the app.
     func load() async {
-        let managers = (try? await NETransparentProxyManager.loadAllFromPreferences()) ?? []
-        guard let manager = managers.first else { return }
-        adopt(manager)
+        // Turning the proxy off in System Settings changes the configuration under us.
+        configurationObserver = NotificationCenter.default.addObserver(forName: .NEVPNConfigurationChange, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, !self.isBusy else { return }
+                Task { await self.reload() }
+            }
+        }
+        guard await reload() else { return }
         try? await activate()
     }
 
-    func setEnabled(_ enabled: Bool, config: ProxyConfig) async {
+    @discardableResult
+    private func reload() async -> Bool {
+        let managers = (try? await NETransparentProxyManager.loadAllFromPreferences()) ?? []
+        guard let manager = managers.first else {
+            self.manager = nil
+            isEnabled = false
+            changed()
+            return false
+        }
+        adopt(manager)
+        return true
+    }
+
+    func setEnabled(_ enabled: Bool) async {
         guard !isBusy else { return }
         isBusy = true
         changed()
         defer {
             isBusy = false
             changed()
+            if needsApply {
+                needsApply = false
+                Task { await apply() }
+            }
         }
         do {
             if enabled {
@@ -67,7 +93,7 @@ final class ProxyController: NSObject {
             }
             guard enabled || manager != nil else { return }
             let manager = manager ?? NETransparentProxyManager()
-            try configure(manager, config: config, enabled: enabled)
+            try configure(manager, config: config(), enabled: enabled)
             try await manager.saveToPreferences()
             try await manager.loadFromPreferences()
             adopt(manager)
@@ -86,8 +112,13 @@ final class ProxyController: NSObject {
     }
 
     /// Saves a changed config, and hands it to the running proxy without dropping connections.
-    func apply(_ config: ProxyConfig) async {
+    func apply() async {
+        guard !isBusy else {
+            needsApply = true
+            return
+        }
         guard let manager else { return }
+        let config = config()
         do {
             try configure(manager, config: config, enabled: isEnabled)
             try await manager.saveToPreferences()
