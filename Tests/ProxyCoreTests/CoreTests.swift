@@ -179,3 +179,13 @@ private func pattern(_ count: Int) -> Data {
         #expect(try decoder.decode(Data(count: 10)).isEmpty)
     }
 }
+
+@Suite struct CutOffTests {
+    @Test func knowsWhenAReplyIsCutOff() throws {
+        let server = try Server(method: .aes256GCM, password: "pw", host: "host", port: 1)
+        var decoder = ResponseDecoder(server: server, requestSalt: Data())
+        #expect(decoder.isBetweenChunks)
+        _ = try decoder.decode(Data(count: 10))
+        #expect(!decoder.isBetweenChunks)
+    }
+}

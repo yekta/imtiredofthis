@@ -3,11 +3,13 @@ import Foundation
 public enum StreamError: LocalizedError {
     case decryptionFailed
     case badResponse
+    case cutOff
 
     public var errorDescription: String? {
         switch self {
         case .decryptionFailed: return "The server's reply couldn't be decrypted. Check the link's password and cipher."
         case .badResponse: return "The server's reply wasn't Shadowsocks."
+        case .cutOff: return "The server closed the connection in the middle of its reply."
         }
     }
 }
@@ -93,6 +95,16 @@ public struct ResponseDecoder {
     public init(server: Server, requestSalt: Data) {
         self.server = server
         self.requestSalt = requestSalt
+    }
+
+    /// Whether the reply so far ends on a whole chunk, or hasn't started: a server that closes
+    /// anywhere else cut its reply off.
+    public var isBetweenChunks: Bool {
+        guard buffer.count == offset else { return false }
+        switch state {
+        case .salt, .length: return true
+        case .header, .payload: return false
+        }
     }
 
     /// Takes the next bytes from the server and returns the data they complete.

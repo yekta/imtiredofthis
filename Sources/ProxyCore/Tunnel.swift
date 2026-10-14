@@ -72,12 +72,17 @@ public final class TunnelConnection {
             if let error {
                 return completion(.failure(error))
             }
-            guard !isComplete else { return completion(.success(nil)) }
+            guard !isComplete else {
+                guard self.decoder.isBetweenChunks else { return completion(.failure(StreamError.cutOff)) }
+                return completion(.success(nil))
+            }
             self.receive(completion)
         }
     }
 
     public func cancel() {
+        failed = true
+        onFailure = nil
         connection.stateUpdateHandler = nil
         connection.cancel()
     }
@@ -125,6 +130,9 @@ public final class PacketTunnel {
     }
 
     public func cancel() {
+        failed = true
+        onFailure = nil
+        onReceive = nil
         connection.stateUpdateHandler = nil
         connection.cancel()
     }
