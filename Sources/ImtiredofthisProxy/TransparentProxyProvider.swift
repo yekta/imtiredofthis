@@ -88,10 +88,16 @@ final class TransparentProxyProvider: NETransparentProxyProvider, NEAppProxyUDPF
 
     private func server(for flow: NEAppProxyFlow) -> Server? {
         let identifier = flow.metaData.sourceAppSigningIdentifier
-        return state.withLock { state in
+        let server: Server? = state.withLock { state in
             guard let server = state.server, state.config.routes(identifier) else { return nil }
             return server
         }
+        if server != nil {
+            log.info("Taking a flow of \(identifier, privacy: .public)")
+        } else {
+            log.debug("Passing a flow of \(identifier, privacy: .public)")
+        }
+        return server
     }
 
     private func apply(_ config: ProxyConfig) {
@@ -106,7 +112,7 @@ final class TransparentProxyProvider: NETransparentProxyProvider, NEAppProxyUDPF
             state.config = config
             state.server = server
         }
-        log.info("Routing \(config.apps.count) apps through \(server?.address.description ?? "nothing", privacy: .public)")
+        log.info("Routing \(config.apps.joined(separator: ", "), privacy: .public) through \(server?.address.description ?? "nothing", privacy: .public)")
     }
 
     private func retain(_ relay: AnyObject) {
