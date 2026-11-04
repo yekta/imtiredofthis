@@ -4,17 +4,17 @@ import NetworkExtension
 import os
 import ProxyCore
 
-let log = Logger(subsystem: "com.yekta.imtiredofthis.proxy", category: "proxy")
-
-/// macOS hands this every new outgoing connection. Those of the chosen apps go through the
-/// server; everything else is handed straight back and never passes through here.
+/// macOS hands this every new outgoing connection. The chosen apps' go through the Shadowsocks
+/// server and, with VLESS on, every other app's go through the VLESS server; the rest are handed
+/// straight back and never pass through here.
 @objc(TransparentProxyProvider)
 final class TransparentProxyProvider: NETransparentProxyProvider, NEAppProxyUDPFlowHandling {
     private let state = OSAllocatedUnfairLock(initialState: State())
 
     private struct State {
         var config = ProxyConfig()
-        var server: Server?
+        var shadowsocks: Server?
+        var vless: VLESSServer?
         var relays: [ObjectIdentifier: AnyObject] = [:]
         var stats = ProxyStats()
     }
@@ -27,12 +27,7 @@ final class TransparentProxyProvider: NETransparentProxyProvider, NEAppProxyUDPF
         settings.includedNetworkRules = [
             NENetworkRule(remoteNetworkEndpoint: nil, remotePrefix: 0, localNetworkEndpoint: nil, localPrefix: 0, protocol: .any, direction: .outbound),
         ]
-        setTunnelNetworkSettings(settings) { error in
-            if let error {
-                log.error("Couldn't apply the proxy settings: \(error.localizedDescription, privacy: .public)")
-            }
-            completionHandler(error)
-        }
+        setTunnelNetworkSettings(settings, completionHandler: completionHandler)
     }
 
     override func stopProxy(with reason: NEProviderStopReason, completionHandler: @escaping () -> Void) {
@@ -61,65 +56,53 @@ final class TransparentProxyProvider: NETransparentProxyProvider, NEAppProxyUDPF
     }
 
     override func handleNewFlow(_ flow: NEAppProxyFlow) -> Bool {
-        guard let server = server(for: flow) else { return false }
+        guard let upstream = upstream(for: flow) else { return false }
         if let udp = flow as? NEAppProxyUDPFlow {
-            return relay(udp, server: server)
+            return relay(udp, through: upstream)
         }
         guard let tcp = flow as? NEAppProxyTCPFlow,
               let target = Address(tcp.remoteFlowEndpoint), !target.isLocal else { return false }
-        let relay = TCPRelay(flow: tcp, target: target, server: server, events: self)
-        retain(relay)
+        let relay = TCPRelay(flow: tcp, target: target, upstream: upstream, events: self)
+        retain(relay, kind: upstream.kind)
         relay.start()
         return true
     }
 
     func handleNewUDPFlow(_ flow: NEAppProxyUDPFlow, initialRemoteFlowEndpoint remoteEndpoint: Network.NWEndpoint) -> Bool {
         // DNS is taken even to the local network: the router's answers may be false.
-        guard let server = server(for: flow),
+        guard let upstream = upstream(for: flow),
               let target = Address(remoteEndpoint), !target.isLocal || target.port == 53 else { return false }
-        return relay(flow, server: server)
+        return relay(flow, through: upstream)
     }
 
-    private func relay(_ flow: NEAppProxyUDPFlow, server: Server) -> Bool {
-        let relay = UDPRelay(flow: flow, server: server, events: self)
-        retain(relay)
+    private func relay(_ flow: NEAppProxyUDPFlow, through upstream: Upstream) -> Bool {
+        let relay = UDPRelay(flow: flow, upstream: upstream, events: self)
+        retain(relay, kind: upstream.kind)
         relay.start()
         return true
     }
 
-    private func server(for flow: NEAppProxyFlow) -> Server? {
+    private func upstream(for flow: NEAppProxyFlow) -> Upstream? {
         let identifier = flow.metaData.sourceAppSigningIdentifier
-        let server: Server? = state.withLock { state in
-            guard let server = state.server, state.config.routes(identifier) else { return nil }
-            return server
+        return state.withLock { state in
+            state.config.upstream(for: identifier, shadowsocks: state.shadowsocks, vless: state.vless)
         }
-        if server != nil {
-            log.info("Taking a flow of \(identifier, privacy: .public)")
-        } else {
-            log.debug("Passing a flow of \(identifier, privacy: .public)")
-        }
-        return server
     }
 
     private func apply(_ config: ProxyConfig) {
-        let server: Server?
-        do {
-            server = try Server(link: config.server)
-        } catch {
-            server = nil
-            log.error("No server: \(error.localizedDescription, privacy: .public)")
-        }
+        let shadowsocks = try? Server(link: config.shadowsocks.server)
+        let vless = try? VLESSServer(link: config.vless.server)
         state.withLock { state in
             state.config = config
-            state.server = server
+            state.shadowsocks = shadowsocks
+            state.vless = vless
         }
-        log.info("Routing \(config.apps.joined(separator: ", "), privacy: .public) through \(server?.address.description ?? "nothing", privacy: .public)")
     }
 
-    private func retain(_ relay: AnyObject) {
+    private func retain(_ relay: AnyObject, kind: UpstreamKind) {
         state.withLock { state in
             state.relays[ObjectIdentifier(relay)] = relay
-            state.stats.connections += 1
+            state.stats[kind].connections += 1
         }
     }
 }
@@ -130,31 +113,30 @@ protocol Closable: AnyObject {
 
 /// What relays report back: bytes moved, failures, and when they are done.
 protocol RelayEvents: AnyObject {
-    func relayed(sent: Int, received: Int)
-    func relayFailed(_ error: Error)
-    func relayClosed(_ relay: AnyObject)
+    func relayed(_ kind: UpstreamKind, sent: Int, received: Int)
+    func relayFailed(_ kind: UpstreamKind, _ error: Error)
+    func relayClosed(_ relay: AnyObject, kind: UpstreamKind)
 }
 
 extension TransparentProxyProvider: RelayEvents {
-    func relayed(sent: Int, received: Int) {
+    func relayed(_ kind: UpstreamKind, sent: Int, received: Int) {
         state.withLock { state in
-            state.stats.sent += UInt64(sent)
-            state.stats.received += UInt64(received)
+            state.stats[kind].sent += UInt64(sent)
+            state.stats[kind].received += UInt64(received)
             if received > 0 {
-                state.stats.lastError = nil
+                state.stats[kind].lastError = nil
             }
         }
     }
 
-    func relayFailed(_ error: Error) {
-        log.error("Through the server: \(error.localizedDescription, privacy: .public)")
-        state.withLock { $0.stats.lastError = error.localizedDescription }
+    func relayFailed(_ kind: UpstreamKind, _ error: Error) {
+        state.withLock { $0.stats[kind].lastError = error.localizedDescription }
     }
 
-    func relayClosed(_ relay: AnyObject) {
+    func relayClosed(_ relay: AnyObject, kind: UpstreamKind) {
         state.withLock { state in
             guard state.relays.removeValue(forKey: ObjectIdentifier(relay)) != nil else { return }
-            state.stats.connections -= 1
+            state.stats[kind].connections -= 1
         }
     }
 }

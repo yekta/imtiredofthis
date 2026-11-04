@@ -1,4 +1,5 @@
 import AppKit
+import ProxyCore
 
 /// What the menus do, shared by the menu bar item and the main menu.
 @MainActor
@@ -47,7 +48,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         model.start()
         model.updater.start()
 
-        guard model.isFirstLaunch || !model.canTurnOn else { return }
+        guard model.isFirstLaunch || !(model.canTurnOn(.shadowsocks) || model.canTurnOn(.vless)) else { return }
         DispatchQueue.main.async { statusItem.showPanel() }
     }
 

@@ -150,16 +150,40 @@ private func pattern(_ count: Int) -> Data {
 
 @Suite struct ProxyConfigTests {
     @Test func routesAppsAndTheirHelpers() {
-        let config = ProxyConfig(apps: ["com.hnc.Discord"])
+        let config = ShadowsocksConfig(apps: ["com.hnc.Discord"])
         #expect(config.routes("com.hnc.Discord"))
         #expect(config.routes("com.hnc.Discord.helper.Renderer"))
         #expect(!config.routes("com.hnc.DiscordPTB"))
         #expect(!config.routes("com.apple.Safari"))
     }
 
-    @Test func decodesPartialFiles() throws {
+    @Test func readsConfigsFromBeforeVLESS() throws {
         let config = try JSONDecoder().decode(ProxyConfig.self, from: Data(#"{"apps": ["com.hnc.Discord"]}"#.utf8))
-        #expect(config == ProxyConfig(server: "", apps: ["com.hnc.Discord"]))
+        #expect(config == ProxyConfig(shadowsocks: ShadowsocksConfig(isOn: true, apps: ["com.hnc.Discord"])))
+    }
+
+    @Test func roundTrips() throws {
+        let config = ProxyConfig(
+            shadowsocks: ShadowsocksConfig(isOn: true, server: "ss://x", apps: ["com.hnc.Discord"]),
+            vless: VLESSConfig(isOn: true, server: "vless://y")
+        )
+        #expect(try JSONDecoder().decode(ProxyConfig.self, from: JSONEncoder().encode(config)) == config)
+    }
+
+    @Test func shadowsocksAppsFirstThenVLESSForTheRest() throws {
+        let shadowsocks = try Server(method: .aes256GCM, password: "pw", host: "1.2.3.4", port: 1)
+        let vless = try VLESSServer(link: VLESSLinkTests.link)
+        var config = ProxyConfig(
+            shadowsocks: ShadowsocksConfig(isOn: true, apps: ["com.hnc.Discord"]),
+            vless: VLESSConfig(isOn: true)
+        )
+        #expect(config.upstream(for: "com.hnc.Discord", shadowsocks: shadowsocks, vless: vless)?.kind == .shadowsocks)
+        #expect(config.upstream(for: "com.apple.Safari", shadowsocks: shadowsocks, vless: vless)?.kind == .vless)
+        config.vless.isOn = false
+        #expect(config.upstream(for: "com.apple.Safari", shadowsocks: shadowsocks, vless: vless) == nil)
+        config.shadowsocks.isOn = false
+        config.vless.isOn = true
+        #expect(config.upstream(for: "com.hnc.Discord", shadowsocks: shadowsocks, vless: vless)?.kind == .vless)
     }
 }
 

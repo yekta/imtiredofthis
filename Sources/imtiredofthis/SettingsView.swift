@@ -8,28 +8,39 @@ struct SettingsView: View {
     static let size = NSSize(width: 420, height: 620)
 
     @Bindable var model: AppModel
-    /// Set when the switch is flipped before the server and apps are in.
-    @State private var showsMissingSteps = false
+    @State private var tab = UpstreamKind.shadowsocks
+    /// Set when a switch is flipped before its setup is done.
+    @State private var showsMissingSteps: Set<UpstreamKind> = []
 
     var body: some View {
         Form {
             Section {
-                Header(model: model, showsMissingSteps: $showsMissingSteps)
+                Picker("Server", selection: $tab) {
+                    Text(UpstreamKind.shadowsocks.title).tag(UpstreamKind.shadowsocks)
+                    Text(UpstreamKind.vless.title).tag(UpstreamKind.vless)
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+
+                Header(model: model, kind: tab, showsMissingSteps: $showsMissingSteps)
             }
 
-            if !model.canTurnOn {
-                GettingStartedSection(model: model, showsMissingSteps: showsMissingSteps)
+            if !model.canTurnOn(tab) {
+                GettingStartedSection(model: model, kind: tab, showsMissingSteps: showsMissingSteps.contains(tab))
             }
 
             SetupSection(proxy: model.proxy)
 
-            if model.proxy.isConnected {
-                TrafficSection(proxy: model.proxy)
+            if model.proxy.isConnected, model.isOn(tab) {
+                TrafficSection(traffic: model.proxy.traffic[tab] ?? ProxyController.Traffic())
             }
 
-            ServerSection(model: model)
+            ServerSection(model: model, kind: tab)
+                .id(tab)
 
-            AppsSection(model: model)
+            if tab == .shadowsocks {
+                AppsSection(model: model)
+            }
 
             Section {
                 Toggle("Launch at login", isOn: Binding(
@@ -84,7 +95,8 @@ struct SettingsView: View {
 
 private struct Header: View {
     @Bindable var model: AppModel
-    @Binding var showsMissingSteps: Bool
+    let kind: UpstreamKind
+    @Binding var showsMissingSteps: Set<UpstreamKind>
 
     var body: some View {
         HStack(spacing: 12) {
@@ -92,7 +104,7 @@ private struct Header: View {
                 .resizable()
                 .frame(width: 48, height: 48)
             VStack(alignment: .leading, spacing: 2) {
-                Text("imtiredofthis")
+                Text(kind.title)
                     .font(.title3.weight(.semibold))
                 HStack(spacing: 5) {
                     Circle()
@@ -108,14 +120,14 @@ private struct Header: View {
                 ProgressView()
                     .controlSize(.small)
             }
-            Toggle("Proxy", isOn: Binding(
-                get: { model.proxy.isEnabled || model.proxy.isTurningOn },
-                set: { enabled in
-                    guard !enabled || model.canTurnOn else {
-                        showsMissingSteps = true
+            Toggle(kind.title, isOn: Binding(
+                get: { model.isOn(kind) || model.isTurningOn(kind) },
+                set: { on in
+                    guard !on || model.canTurnOn(kind) else {
+                        showsMissingSteps.insert(kind)
                         return
                     }
-                    model.setEnabled(enabled)
+                    model.setOn(kind, on)
                 }
             ))
             .labelsHidden()
@@ -137,16 +149,27 @@ private struct Header: View {
         if proxy.isAskingToAddConfiguration {
             return ("Click Allow on macOS's popup", .orange)
         }
-        guard model.canTurnOn else { return ("Set it up below to turn it on", .secondary) }
-        guard proxy.isEnabled else { return proxy.isTurningOn ? ("Turning on…", .orange) : ("Off", .secondary) }
+        guard model.isOn(kind) else {
+            guard model.canTurnOn(kind) else { return ("Set it up below to turn it on", .secondary) }
+            return model.isTurningOn(kind) ? ("Turning on…", .orange) : ("Off", .secondary)
+        }
         switch proxy.status {
         case .connected:
-            guard proxy.isServerReachable else { return ("Can't reach the server", .red) }
-            let count = model.config.apps.count
-            return ("Routing \(count) \(count == 1 ? "app" : "apps")", .green)
+            guard proxy.traffic[kind]?.isServerReachable ?? true else { return ("Can't reach the server", .red) }
+            return (routing, .green)
         case .connecting, .reasserting: return ("Connecting…", .orange)
         case .disconnecting: return ("Turning off…", .secondary)
         default: return ("Waiting for the network", .orange)
+        }
+    }
+
+    private var routing: String {
+        switch kind {
+        case .shadowsocks:
+            let count = model.config.shadowsocks.apps.count
+            return "Routing \(count) \(count == 1 ? "app" : "apps")"
+        case .vless:
+            return model.isOn(.shadowsocks) ? "Routing every other app" : "Routing every app"
         }
     }
 }
@@ -191,21 +214,30 @@ private struct SetupSection: View {
 /// What to do before the switch can turn on, ticked off as it gets done.
 private struct GettingStartedSection: View {
     let model: AppModel
+    let kind: UpstreamKind
     let showsMissingSteps: Bool
 
     var body: some View {
         Section {
-            Step(number: 1, title: "Paste your server's ss:// link", detail: "In Server, below, then click Save.",
-                 isDone: model.validServer != nil, isMissing: showsMissingSteps)
-            Step(number: 2, title: "Add the apps to send through it", detail: "In Apps, below: Add App…, then Discord, for example.",
-                 isDone: !model.config.apps.isEmpty, isMissing: showsMissingSteps)
-            Step(number: 3, title: "Turn it on", detail: "With the switch above. The first time, macOS asks you to allow it.",
-                 isDone: false, isMissing: false)
+            switch kind {
+            case .shadowsocks:
+                Step(number: 1, title: "Paste your server's ss:// link", detail: "In Server, below, then click Save.",
+                     isDone: (try? model.shadowsocksServer?.get()) != nil, isMissing: showsMissingSteps)
+                Step(number: 2, title: "Add the apps to send through it", detail: "In Apps, below: Add App…, then Discord, for example.",
+                     isDone: !model.config.shadowsocks.apps.isEmpty, isMissing: showsMissingSteps)
+                Step(number: 3, title: "Turn it on", detail: "With the switch above. The first time, macOS asks you to allow it.",
+                     isDone: false, isMissing: false)
+            case .vless:
+                Step(number: 1, title: "Paste your server's vless:// link", detail: "In Server, below, then click Save.",
+                     isDone: (try? model.vlessServer?.get()) != nil, isMissing: showsMissingSteps)
+                Step(number: 2, title: "Turn it on", detail: "With the switch above. Every app goes through it, except those Shadowsocks sends.",
+                     isDone: false, isMissing: false)
+            }
         } header: {
             Text("Get Started")
         } footer: {
             if showsMissingSteps {
-                Text("Do steps 1 and 2 first, then the switch turns on.")
+                Text(kind == .shadowsocks ? "Do steps 1 and 2 first, then the switch turns on." : "Do step 1 first, then the switch turns on.")
                     .font(.callout)
                     .foregroundStyle(.orange)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -269,31 +301,31 @@ private struct Notice: View {
 }
 
 private struct TrafficSection: View {
-    let proxy: ProxyController
+    let traffic: ProxyController.Traffic
 
     var body: some View {
         Section {
             HStack(spacing: 0) {
-                Metric(title: "Upload", symbol: "arrow.up", value: speed(proxy.upload))
+                Metric(title: "Upload", symbol: "arrow.up", value: speed(traffic.upload))
                 Divider()
-                Metric(title: "Download", symbol: "arrow.down", value: speed(proxy.download))
+                Metric(title: "Download", symbol: "arrow.down", value: speed(traffic.download))
                 Divider()
                 Metric(title: "Latency", symbol: "timer", value: latency)
             }
             .padding(.vertical, 4)
-            if let error = proxy.serverError {
+            if let error = traffic.serverError {
                 Text(error)
                     .font(.callout)
                     .foregroundStyle(.red)
             }
         } footer: {
-            Text("\(proxy.connections) \(proxy.connections == 1 ? "connection" : "connections") open through the server.")
+            Text("\(traffic.connections) \(traffic.connections == 1 ? "connection" : "connections") open through the server.")
                 .settingsFooter()
         }
     }
 
     private var latency: String {
-        guard let latency = proxy.latency else { return "—" }
+        guard let latency = traffic.latency else { return "—" }
         let milliseconds = Double(latency.components.attoseconds) / 1e15 + Double(latency.components.seconds) * 1000
         return "\(Int(milliseconds.rounded())) ms"
     }
@@ -324,14 +356,15 @@ private struct Metric: View {
 
 private struct ServerSection: View {
     @Bindable var model: AppModel
+    let kind: UpstreamKind
     @State private var draft = ""
     @State private var isEditing = false
     @FocusState private var isFocused: Bool
 
     var body: some View {
         Section {
-            if isEditing || model.config.server.isEmpty {
-                TextField("Server link", text: $draft, prompt: Text("ss://…"))
+            if isEditing || link.isEmpty {
+                TextField("Server link", text: $draft, prompt: Text(kind == .shadowsocks ? "ss://…" : "vless://…"))
                     .labelsHidden()
                     .focused($isFocused)
                     .onSubmit(save)
@@ -342,7 +375,7 @@ private struct ServerSection: View {
                 }
                 HStack {
                     Spacer()
-                    if !model.config.server.isEmpty {
+                    if !link.isEmpty {
                         Button("Cancel") { isEditing = false }
                     }
                     Button("Save", action: save)
@@ -350,13 +383,13 @@ private struct ServerSection: View {
                         .disabled(draft.isEmpty || draftError != nil)
                 }
             } else {
-                switch model.server {
+                switch summary {
                 case let .success(server):
                     LabeledContent {
                         Button("Change…", action: edit)
                     } label: {
-                        Text(server.name ?? server.host)
-                        Text("\(server.host):\(String(server.port)) · \(server.method.rawValue)")
+                        Text(server.title)
+                        Text(server.detail)
                     }
                 case let .failure(error):
                     LabeledContent {
@@ -372,15 +405,37 @@ private struct ServerSection: View {
         } header: {
             Text("Server")
         } footer: {
-            Text("Your Shadowsocks server's ss:// link. aes-128-gcm, aes-256-gcm, chacha20-ietf-poly1305 and the 2022-blake3 AES ciphers work.")
-                .settingsFooter()
+            switch kind {
+            case .shadowsocks:
+                Text("Your Shadowsocks server's ss:// link. aes-128-gcm, aes-256-gcm, chacha20-ietf-poly1305 and the 2022-blake3 AES ciphers work.")
+                    .settingsFooter()
+            case .vless:
+                Text("Your VLESS server's vless:// link: REALITY over TCP, with the xtls-rprx-vision flow or none, like the link Xray's setup gives you.")
+                    .settingsFooter()
+            }
+        }
+    }
+
+    private var link: String {
+        kind == .shadowsocks ? model.config.shadowsocks.server : model.config.vless.server
+    }
+
+    private var summary: Result<(title: String, detail: String), Error>? {
+        switch kind {
+        case .shadowsocks:
+            return model.shadowsocksServer?.map { ($0.name ?? $0.host, "\($0.host):\(String($0.port)) · \($0.method.rawValue)") }
+        case .vless:
+            return model.vlessServer?.map { ($0.name ?? $0.host, "\($0.host):\(String($0.port)) · REALITY as \($0.serverName)") }
         }
     }
 
     private var draftError: String? {
         guard !draft.isEmpty else { return nil }
         do {
-            _ = try Server(link: draft)
+            switch kind {
+            case .shadowsocks: _ = try Server(link: draft)
+            case .vless: _ = try VLESSServer(link: draft)
+            }
             return nil
         } catch {
             return error.localizedDescription
@@ -395,7 +450,11 @@ private struct ServerSection: View {
 
     private func save() {
         guard !draft.isEmpty, draftError == nil else { return }
-        model.config.server = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        let link = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        switch kind {
+        case .shadowsocks: model.config.shadowsocks.server = link
+        case .vless: model.config.vless.server = link
+        }
         draft = ""
         isEditing = false
     }
@@ -406,11 +465,11 @@ private struct AppsSection: View {
 
     var body: some View {
         Section {
-            if model.config.apps.isEmpty {
+            if model.config.shadowsocks.apps.isEmpty {
                 Text("No apps yet")
                     .foregroundStyle(.secondary)
             }
-            ForEach(model.config.apps.map(AppEntry.init(bundleID:))) { app in
+            ForEach(model.config.shadowsocks.apps.map(AppEntry.init(bundleID:))) { app in
                 HStack(spacing: 8) {
                     Image(nsImage: app.icon)
                         .resizable()
@@ -444,7 +503,7 @@ private struct AppsSection: View {
         } header: {
             Text("Apps")
         } footer: {
-            Text("Only these apps and their helpers go through the server, over TCP and UDP, DNS included. Everything else connects as usual. An app that was already open needs a restart.")
+            Text("Only these apps and their helpers go through the server, over TCP and UDP, DNS included. Everything else connects as usual, or through VLESS when it is on. An app that was already open needs a restart.")
                 .settingsFooter()
         }
     }

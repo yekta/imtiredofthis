@@ -14,17 +14,17 @@ final class TCPRelay: Closable {
 
     private let flow: NEAppProxyTCPFlow
     private var target: Address
-    private let server: Server
+    private let upstream: Upstream
     private weak var events: RelayEvents?
     private let queue = DispatchQueue(label: "tcp-relay")
-    private var tunnel: TunnelConnection?
+    private var tunnel: StreamTunnel?
     private var appDone = false
     private var serverDone = false
     private var closed = false
 
-    init(flow: NEAppProxyTCPFlow, target: Address, server: Server, events: RelayEvents) {
+    init(flow: NEAppProxyTCPFlow, target: Address, upstream: Upstream, events: RelayEvents) {
         self.flow = flow
-        self.server = server
+        self.upstream = upstream
         self.events = events
         if let name = flow.remoteHostname, !name.isEmpty {
             self.target = Address(name: name, port: target.port)
@@ -52,15 +52,15 @@ final class TCPRelay: Closable {
         if !target.isName, let name = TLS.serverName(in: data) {
             target = Address(name: name, port: target.port)
         }
-        let tunnel = TunnelConnection(server: server, target: target, queue: queue)
+        let tunnel = upstream.stream(to: target, queue: queue)
         tunnel.onFailure = { [weak self] error in
             guard let self, !self.closed else { return }
-            self.events?.relayFailed(error)
+            self.events?.relayFailed(self.upstream.kind, error)
             self.close(error)
         }
         self.tunnel = tunnel
         tunnel.start(sending: data)
-        events?.relayed(sent: data.count, received: 0)
+        events?.relayed(upstream.kind, sent: data.count, received: 0)
         readFromServer()
     }
 
@@ -87,7 +87,7 @@ final class TCPRelay: Closable {
                     if let error {
                         return close(error)
                     }
-                    events?.relayed(sent: data.count, received: 0)
+                    events?.relayed(upstream.kind, sent: data.count, received: 0)
                     readFromApp()
                 }
             }
@@ -99,7 +99,7 @@ final class TCPRelay: Closable {
             guard !closed else { return }
             switch result {
             case let .failure(error):
-                events?.relayFailed(error)
+                events?.relayFailed(upstream.kind, error)
                 close(error)
             case .success(nil):
                 serverDone = true
@@ -111,7 +111,7 @@ final class TCPRelay: Closable {
                         if let error {
                             return close(error)
                         }
-                        events?.relayed(sent: 0, received: data.count)
+                        events?.relayed(upstream.kind, sent: 0, received: data.count)
                         readFromServer()
                     }
                 }
@@ -137,7 +137,7 @@ final class TCPRelay: Closable {
         tunnel?.cancel()
         flow.closeReadWithError(error)
         flow.closeWriteWithError(error)
-        events?.relayClosed(self)
+        events?.relayClosed(self, kind: upstream.kind)
     }
 }
 
@@ -149,19 +149,19 @@ final class UDPRelay: Closable {
     private let flow: NEAppProxyUDPFlow
     private weak var events: RelayEvents?
     private let queue = DispatchQueue(label: "udp-relay")
-    private let server: Server
-    private let tunnel: PacketTunnel
+    private let upstream: Upstream
+    private let tunnel: DatagramTunnel
     private var lookups: [ObjectIdentifier: DNSLookup] = [:]
     private var directConnections: [Address: NWConnection] = [:]
     private var lastActivity = Date()
     private var idleTimer: DispatchSourceTimer?
     private var closed = false
 
-    init(flow: NEAppProxyUDPFlow, server: Server, events: RelayEvents) {
+    init(flow: NEAppProxyUDPFlow, upstream: Upstream, events: RelayEvents) {
         self.flow = flow
         self.events = events
-        self.server = server
-        tunnel = PacketTunnel(server: server, queue: queue)
+        self.upstream = upstream
+        tunnel = upstream.packets(queue: queue)
     }
 
     func start() {
@@ -176,7 +176,7 @@ final class UDPRelay: Closable {
                 }
                 tunnel.onFailure = { [weak self] error in
                     guard let self, !self.closed else { return }
-                    self.events?.relayFailed(error)
+                    self.events?.relayFailed(self.upstream.kind, error)
                     self.close(error)
                 }
                 tunnel.start()
@@ -209,7 +209,7 @@ final class UDPRelay: Closable {
                     tunnel.send(payload, to: target)
                     sent += payload.count
                 }
-                events?.relayed(sent: sent, received: 0)
+                events?.relayed(upstream.kind, sent: sent, received: 0)
                 readFromApp()
             }
         }
@@ -219,7 +219,7 @@ final class UDPRelay: Closable {
         guard !closed else { return }
         lastActivity = Date()
         if throughServer {
-            events?.relayed(sent: 0, received: payload.count)
+            events?.relayed(upstream.kind, sent: 0, received: payload.count)
         }
         flow.writeDatagrams([(payload, source.endpoint)]) { _ in }
     }
@@ -227,7 +227,7 @@ final class UDPRelay: Closable {
     /// DNS goes through the server to a public resolver, whatever the app asked (often the router,
     /// whose answers for blocked names may be false). The answer comes back as if from the one asked.
     private func resolve(_ query: Data, askedOf origin: Address) {
-        let lookup = DNSLookup(server: server, queue: queue)
+        let lookup = DNSLookup(upstream: upstream, queue: queue)
         let id = ObjectIdentifier(lookup)
         lookups[id] = lookup
         lookup.resolve(query) { [weak self] answer in
@@ -287,6 +287,6 @@ final class UDPRelay: Closable {
         }
         flow.closeReadWithError(error)
         flow.closeWriteWithError(error)
-        events?.relayClosed(self)
+        events?.relayClosed(self, kind: upstream.kind)
     }
 }

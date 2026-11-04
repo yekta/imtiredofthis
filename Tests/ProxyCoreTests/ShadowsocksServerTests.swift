@@ -7,12 +7,12 @@ import Testing
 /// are skipped without it.
 private let ssserver = ["/opt/homebrew/bin/ssserver", "/usr/local/bin/ssserver"].first { FileManager.default.isExecutableFile(atPath: $0) }
 
-private func freePort() -> UInt16 {
+func freePort() -> UInt16 {
     UInt16.random(in: 20000...60000)
 }
 
 /// Echoes back whatever comes in, over TCP and UDP, on one port.
-private final class EchoServer {
+final class EchoServer {
     let port: UInt16
     private let tcp: NWListener
     private let udp: NWListener
@@ -167,7 +167,7 @@ struct ShadowsocksServerTests {
         let queue = DispatchQueue(label: "dns")
         // A query for discord.com's A record.
         let query = Data([0x12, 0x34, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 7]) + Data("discord".utf8) + Data([3]) + Data("com".utf8) + Data([0, 0, 1, 0, 1])
-        let lookup = DNSLookup(server: process.server, queue: queue)
+        let lookup = DNSLookup(upstream: .shadowsocks(process.server), queue: queue)
         let answer: Data? = await withCheckedContinuation { continuation in
             queue.async { lookup.resolve(query) { continuation.resume(returning: $0) } }
         }
