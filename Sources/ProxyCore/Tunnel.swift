@@ -1,10 +1,67 @@
 import Foundation
 import Network
 
-/// A TCP connection to `target` through the server. Everything runs on `queue`, and so must
+/// A TCP connection to a target through a server. Everything runs on its queue, and so must
 /// every call into it.
-public final class TunnelConnection {
+public protocol StreamTunnel: AnyObject {
     /// Called once, when the server can't be reached or the connection breaks.
+    var onFailure: ((Error) -> Void)? { get set }
+    /// Connects, sending `initialData` along with the request so it costs no extra round trip.
+    func start(sending initialData: Data)
+    func send(_ data: Data, completion: @escaping (Error?) -> Void)
+    /// Tells the target we are done sending; it can still answer.
+    func finishSending()
+    /// The target's next data, or nil once it has closed its side.
+    func receive(_ completion: @escaping (Result<Data?, Error>) -> Void)
+    func cancel()
+}
+
+/// One UDP flow's packets, to and from any number of targets through a server. Everything runs on
+/// its queue.
+public protocol DatagramTunnel: AnyObject {
+    /// A packet back from one of the targets.
+    var onReceive: ((Data, Address) -> Void)? { get set }
+    var onFailure: ((Error) -> Void)? { get set }
+    func start()
+    func send(_ payload: Data, to target: Address)
+    func cancel()
+}
+
+/// The server connections go through.
+public enum Upstream: Sendable {
+    case shadowsocks(Server)
+    case vless(VLESSServer)
+
+    public var address: Address {
+        switch self {
+        case let .shadowsocks(server): return server.address
+        case let .vless(server): return server.address
+        }
+    }
+
+    public func stream(to target: Address, queue: DispatchQueue) -> StreamTunnel {
+        switch self {
+        case let .shadowsocks(server):
+            return TunnelConnection(server: server, target: target, queue: queue)
+        case let .vless(server):
+            guard #available(macOS 26.0, *) else { preconditionFailure("A VLESSServer only exists on macOS 26 or later") }
+            return VLESSConnection(server: server, target: target, command: .tcp, queue: queue)
+        }
+    }
+
+    public func packets(queue: DispatchQueue) -> DatagramTunnel {
+        switch self {
+        case let .shadowsocks(server):
+            return PacketTunnel(server: server, queue: queue)
+        case let .vless(server):
+            guard #available(macOS 26.0, *) else { preconditionFailure("A VLESSServer only exists on macOS 26 or later") }
+            return VLESSPacketTunnel(server: server, queue: queue)
+        }
+    }
+}
+
+/// A TCP connection to `target` through a Shadowsocks server.
+public final class TunnelConnection: StreamTunnel {
     public var onFailure: ((Error) -> Void)?
 
     private let connection: NWConnection
@@ -24,7 +81,6 @@ public final class TunnelConnection {
         decoder = ResponseDecoder(server: server, requestSalt: encoder.salt)
     }
 
-    /// Connects, sending `initialData` along with the request so it costs no extra round trip.
     public func start(sending initialData: Data) {
         connection.stateUpdateHandler = { [weak self] state in
             switch state {
@@ -45,12 +101,10 @@ public final class TunnelConnection {
         connection.send(content: encoder.encode(data), completion: .contentProcessed(completion))
     }
 
-    /// Tells the target we are done sending; it can still answer.
     public func finishSending() {
         connection.send(content: nil, contentContext: .finalMessage, isComplete: true, completion: .idempotent)
     }
 
-    /// The target's next data, or nil once it has closed its side.
     public func receive(_ completion: @escaping (Result<Data?, Error>) -> Void) {
         guard !reachedEnd else { return completion(.success(nil)) }
         connection.receive(minimumIncompleteLength: 1, maximumLength: 256 * 1024) { [weak self] content, _, isComplete, error in
@@ -94,10 +148,8 @@ public final class TunnelConnection {
     }
 }
 
-/// One UDP flow's packets, to and from any number of targets through the server. Everything runs
-/// on `queue`.
-public final class PacketTunnel {
-    /// A packet back from one of the targets.
+/// One UDP flow's packets, to and from any number of targets through a Shadowsocks server.
+public final class PacketTunnel: DatagramTunnel {
     public var onReceive: ((Data, Address) -> Void)?
     public var onFailure: ((Error) -> Void)?
 

@@ -77,7 +77,7 @@ cat > "$PROXY/Contents/Info.plist" <<PLIST
     <key>CFBundleVersion</key><string>$VERSION</string>
     <key>LSMinimumSystemVersion</key><string>15.0</string>
     <key>NSHumanReadableCopyright</key><string>MIT License</string>
-    <key>NSSystemExtensionUsageDescription</key><string>Carries the connections of the apps you choose to your Shadowsocks server.</string>
+    <key>NSSystemExtensionUsageDescription</key><string>Carries connections through your Shadowsocks and VLESS servers.</string>
     <key>NetworkExtension</key>
     <dict>
         <key>NEMachServiceName</key><string>$TEAM_ID.$PROXY_ID</string>

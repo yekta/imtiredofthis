@@ -6,13 +6,13 @@ public final class DNSLookup {
     public static let resolver = Address(name: "1.1.1.1", port: 53)
     private static let timeout: DispatchTimeInterval = .seconds(8)
 
-    private let tunnel: TunnelConnection
+    private let tunnel: StreamTunnel
     private let queue: DispatchQueue
     private var completion: ((Data?) -> Void)?
     private var buffer = Data()
 
-    public init(server: Server, queue: DispatchQueue) {
-        tunnel = TunnelConnection(server: server, target: Self.resolver, queue: queue)
+    public init(upstream: Upstream, queue: DispatchQueue) {
+        tunnel = upstream.stream(to: Self.resolver, queue: queue)
         self.queue = queue
     }
 

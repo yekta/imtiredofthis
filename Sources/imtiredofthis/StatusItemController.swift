@@ -1,4 +1,5 @@
 import AppKit
+import ProxyCore
 import SwiftUI
 
 /// The menu bar item. A click drops the panel down from it; a right click shows a short menu.
@@ -48,7 +49,7 @@ final class StatusItemController: NSObject, NSMenuDelegate, NSPopoverDelegate {
     }
 
     func popoverWillShow(_ notification: Notification) {
-        model.proxy.startMonitoring(model.validServer)
+        model.proxy.startMonitoring(model.servers)
     }
 
     func popoverDidClose(_ notification: Notification) {
@@ -82,11 +83,14 @@ final class StatusItemController: NSObject, NSMenuDelegate, NSPopoverDelegate {
             menu.addItem(.separator())
         }
 
-        let enabled = NSMenuItem(title: "Proxy", action: #selector(toggleEnabled), keyEquivalent: "")
-        enabled.state = model.proxy.isEnabled ? .on : .off
-        enabled.isEnabled = model.canTurnOn && !model.proxy.isBusy
-        enabled.target = self
-        menu.addItem(enabled)
+        for kind in [UpstreamKind.shadowsocks, .vless] {
+            let item = NSMenuItem(title: kind.title, action: #selector(toggle(_:)), keyEquivalent: "")
+            item.representedObject = kind.rawValue
+            item.state = model.isOn(kind) ? .on : .off
+            item.isEnabled = (model.isOn(kind) || model.canTurnOn(kind)) && !model.proxy.isBusy
+            item.target = self
+            menu.addItem(item)
+        }
 
         menu.addItem(.separator())
         menu.addItem(actionItem("Settings…", #selector(AppActions.showSettings)))
@@ -101,7 +105,8 @@ final class StatusItemController: NSObject, NSMenuDelegate, NSPopoverDelegate {
         return item
     }
 
-    @objc private func toggleEnabled() {
-        model.setEnabled(!model.proxy.isEnabled)
+    @objc private func toggle(_ sender: NSMenuItem) {
+        guard let kind = (sender.representedObject as? String).flatMap(UpstreamKind.init(rawValue:)) else { return }
+        model.setOn(kind, !model.isOn(kind))
     }
 }

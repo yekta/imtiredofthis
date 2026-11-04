@@ -31,12 +31,17 @@ final class ProxyController: NSObject {
     /// Waiting on macOS's "add proxy configurations" alert, the first time.
     private(set) var isAskingToAddConfiguration = false
     private(set) var error: String?
-    private(set) var upload: Double = 0
-    private(set) var download: Double = 0
-    private(set) var connections = 0
-    private(set) var latency: Duration?
-    private(set) var isServerReachable = true
-    private(set) var serverError: String?
+    private(set) var traffic: [UpstreamKind: Traffic] = [:]
+
+    /// One server's live numbers.
+    struct Traffic: Equatable {
+        var upload: Double = 0
+        var download: Double = 0
+        var connections = 0
+        var latency: Duration?
+        var isServerReachable = true
+        var serverError: String?
+    }
 
     @ObservationIgnored var onChange: (() -> Void)?
     /// The config as it is now, read when it is saved, since turning on can wait on the user.
@@ -48,7 +53,7 @@ final class ProxyController: NSObject {
     @ObservationIgnored private var activations: [CheckedContinuation<Void, Error>] = []
     @ObservationIgnored private var lastStats: (stats: ProxyStats, at: Date)?
     @ObservationIgnored private var monitorTimer: Timer?
-    @ObservationIgnored private var monitoredServer: Server?
+    @ObservationIgnored private var monitoredServers: [UpstreamKind: Address] = [:]
 
     var isConnected: Bool { status == .connected }
 
@@ -142,7 +147,9 @@ final class ProxyController: NSObject {
     private func configure(_ manager: NETransparentProxyManager, config: ProxyConfig, enabled: Bool) throws {
         let configuration = (manager.protocolConfiguration as? NETunnelProviderProtocol) ?? NETunnelProviderProtocol()
         configuration.providerBundleIdentifier = Self.extensionID
-        configuration.serverAddress = (try? Server(link: config.server))?.address.description ?? "Not set"
+        let shadowsocks = config.shadowsocks.isOn ? (try? Server(link: config.shadowsocks.server))?.address : nil
+        let vless = config.vless.isOn ? (try? VLESSServer(link: config.vless.server))?.address : nil
+        configuration.serverAddress = (shadowsocks ?? vless)?.description ?? "Not set"
         configuration.providerConfiguration = ["config": try JSONEncoder().encode(config)]
         manager.protocolConfiguration = configuration
         manager.localizedDescription = "imtiredofthis"
@@ -204,9 +211,9 @@ final class ProxyController: NSObject {
 
     // MARK: Live numbers
 
-    /// While the panel shows: the speeds every second, the server's latency every few.
-    func startMonitoring(_ server: Server?) {
-        monitoredServer = server
+    /// While the panel shows: the speeds every second, the servers' latency every few.
+    func startMonitoring(_ servers: [UpstreamKind: Address]) {
+        monitoredServers = servers
         stopMonitoring()
         lastStats = nil
         var tick = 0
@@ -232,9 +239,11 @@ final class ProxyController: NSObject {
     private func refreshStats() {
         guard isConnected, let session = manager?.connection as? NETunnelProviderSession,
               let message = try? JSONEncoder().encode(ProviderMessage.stats) else {
-            upload = 0
-            download = 0
-            connections = 0
+            for kind in [UpstreamKind.shadowsocks, .vless] {
+                traffic[kind, default: Traffic()].upload = 0
+                traffic[kind, default: Traffic()].download = 0
+                traffic[kind, default: Traffic()].connections = 0
+            }
             return
         }
         try? session.sendProviderMessage(message) { [weak self] response in
@@ -247,24 +256,35 @@ final class ProxyController: NSObject {
 
     private func received(_ stats: ProxyStats) {
         let now = Date()
-        if let last = lastStats, stats.sent >= last.stats.sent, stats.received >= last.stats.received {
-            let seconds = max(now.timeIntervalSince(last.at), 0.1)
-            upload = Double(stats.sent - last.stats.sent) / seconds
-            download = Double(stats.received - last.stats.received) / seconds
+        for kind in [UpstreamKind.shadowsocks, .vless] {
+            let totals = stats[kind]
+            var traffic = self.traffic[kind] ?? Traffic()
+            if let last = lastStats?.stats[kind], let at = lastStats?.at, totals.sent >= last.sent, totals.received >= last.received {
+                let seconds = max(now.timeIntervalSince(at), 0.1)
+                traffic.upload = Double(totals.sent - last.sent) / seconds
+                traffic.download = Double(totals.received - last.received) / seconds
+            }
+            traffic.connections = totals.connections
+            traffic.serverError = totals.lastError
+            self.traffic[kind] = traffic
         }
         lastStats = (stats, now)
-        connections = stats.connections
-        serverError = stats.lastError
+    }
+
+    private func probeLatency() {
+        for kind in [UpstreamKind.shadowsocks, .vless] {
+            probeLatency(kind)
+        }
     }
 
     /// How long a TCP handshake with the server takes, which is about one round trip.
-    private func probeLatency() {
-        guard let server = monitoredServer else {
-            latency = nil
+    private func probeLatency(_ kind: UpstreamKind) {
+        guard let server = monitoredServers[kind] else {
+            traffic[kind, default: Traffic()].latency = nil
             return
         }
         let started = ContinuousClock.now
-        let connection = NWConnection(to: server.address.endpoint, using: .tcp)
+        let connection = NWConnection(to: server.endpoint, using: .tcp)
         connection.stateUpdateHandler = { [weak self] state in
             let result: Duration?
             switch state {
@@ -275,8 +295,8 @@ final class ProxyController: NSObject {
             connection.stateUpdateHandler = nil
             connection.cancel()
             DispatchQueue.main.async {
-                self?.latency = result
-                self?.isServerReachable = result != nil
+                self?.traffic[kind, default: Traffic()].latency = result
+                self?.traffic[kind, default: Traffic()].isServerReachable = result != nil
             }
         }
         connection.start(queue: .global(qos: .utility))
