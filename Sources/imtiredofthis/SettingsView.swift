@@ -21,6 +21,7 @@ struct SettingsView: View {
                 }
                 .pickerStyle(.segmented)
                 .labelsHidden()
+                .fillsWidth()
 
                 Header(model: model, kind: tab, showsMissingSteps: $showsMissingSteps)
             }
@@ -590,5 +591,17 @@ private extension Text {
             .foregroundStyle(.secondary)
             .multilineTextAlignment(.leading)
             .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+private extension View {
+    /// Stretches the segments across the row; macOS 15 keeps them at their own width.
+    @ViewBuilder
+    func fillsWidth() -> some View {
+        if #available(macOS 26, *) {
+            buttonSizing(.flexible)
+        } else {
+            self
+        }
     }
 }
