@@ -128,8 +128,10 @@ import the certificate from `~/apple-signing` into a keychain, build with `SIGN_
 notarizes and publishes the app as a GitHub release; it needs the repository's signing secrets
 (`APPLE_CERTIFICATE` and `APPLE_CERTIFICATE_PASSWORD`, the Developer ID Application certificate as
 a base64 .p12 and its password; `APPLE_API_KEY`, `APPLE_API_KEY_ID` and `APPLE_API_ISSUER_ID`, an
-App Store Connect API key) and the profiles. The secrets come from `~/apple-signing` on the dev
-machine, whose README.md says which file is which secret.
+App Store Connect API key) and the profiles. `APPLE_DISTRIBUTION_CERTIFICATE` and
+`APPLE_DISTRIBUTION_CERTIFICATE_PASSWORD`, the Apple Distribution certificate as a base64 .p12 and
+its password, are for the iOS app's TestFlight builds, uploaded with the same API key. The secrets
+come from `~/apple-signing` on the dev machine, whose README.md says which file is which secret.
 
 ## Commit Messages
 
