@@ -122,6 +122,8 @@ private struct StatusView: View {
         toggle {
             Text(buttonTitle)
                 .font(.subheadline.weight(.semibold))
+                .lineLimit(1)
+                .minimumScaleFactor(0.6)
                 .frame(maxWidth: .infinity)
         }
         .buttonStyle(.borderedProminent)
