@@ -5,7 +5,7 @@ import Testing
 
 /// Xray, whose VLESS and REALITY server these tests talk to (`brew install xray`). They are
 /// skipped without it.
-private let xray = ["/opt/homebrew/bin/xray", "/usr/local/bin/xray"].first { FileManager.default.isExecutableFile(atPath: $0) }
+let xray = ["/opt/homebrew/bin/xray", "/usr/local/bin/xray"].first { FileManager.default.isExecutableFile(atPath: $0) }
 
 private func run(_ arguments: [String]) throws -> Data {
     let process = Process()
@@ -21,7 +21,7 @@ private func run(_ arguments: [String]) throws -> Data {
 
 /// An Xray server with REALITY in front of VLESS, passing for a local TLS server: one user with
 /// the Vision flow, one without.
-private final class XrayProcess {
+final class XrayProcess {
     let visionLink: String
     let plainLink: String
     let wrongKeyLink: String

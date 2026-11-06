@@ -1,0 +1,70 @@
+name: iOS
+
+# On every push to main that changes the iOS app or what it is built from, and by hand: archives
+# the app for devices, signs it with the Apple Distribution certificate and the App Store profiles
+# in Resources/Profiles, and uploads it to TestFlight. Without the signing secrets nothing is
+# uploaded. A newer push takes the place of an upload that is still on its way.
+on:
+  push:
+    branches: [main]
+    paths:
+      - ios/**
+      - Sources/ProxyCore/**
+      - Sources/PacketStack/**
+      - Sources/CLwIP/**
+      - Resources/AppIcon.icon/**
+      - Resources/Profiles/routey-ios*
+      - Package.swift
+      - VERSION
+      - .github/workflows/ios.yml
+  workflow_dispatch:
+
+concurrency:
+  group: ios-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  testflight:
+    runs-on: macos-26
+    timeout-minutes: 60
+    env:
+      SIGNED: ${{ secrets.APPLE_DISTRIBUTION_CERTIFICATE != '' && secrets.APPLE_API_KEY != '' }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Check signing
+        run: |
+          if [ "$SIGNED" = "true" ]; then
+            echo "READY=true" >> "$GITHUB_ENV"
+          else
+            echo "::notice::Not uploaded: TestFlight needs the Apple Distribution certificate and the App Store Connect key."
+          fi
+
+      - name: Toolchain
+        run: xcodebuild -version
+
+      - name: Import the signing certificate
+        if: env.READY == 'true'
+        env:
+          APPLE_DISTRIBUTION_CERTIFICATE: ${{ secrets.APPLE_DISTRIBUTION_CERTIFICATE }}
+          APPLE_DISTRIBUTION_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_DISTRIBUTION_CERTIFICATE_PASSWORD }}
+        run: |
+          KEYCHAIN="$RUNNER_TEMP/signing.keychain-db"
+          KEYCHAIN_PASSWORD="$(uuidgen)"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security set-keychain-settings "$KEYCHAIN"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          echo "$APPLE_DISTRIBUTION_CERTIFICATE" | base64 --decode > "$RUNNER_TEMP/certificate.p12"
+          security import "$RUNNER_TEMP/certificate.p12" -k "$KEYCHAIN" -P "$APPLE_DISTRIBUTION_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN" >/dev/null
+          security list-keychains -d user -s "$KEYCHAIN" login.keychain-db
+
+      - name: Upload to TestFlight
+        if: env.READY == 'true'
+        env:
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER_ID: ${{ secrets.APPLE_API_ISSUER_ID }}
+        run: ios/scripts/testflight.sh

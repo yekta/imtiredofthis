@@ -8,11 +8,16 @@ through Shadowsocks, the rest through VLESS when it is on, TCP and UDP, and hand
 neither takes. Shadowsocks, VLESS, REALITY and its TLS 1.3 are written here in Swift on
 Network.framework and CryptoKit. It is under the MIT license.
 
+The iOS app (`ios/`) sends the whole device through the VLESS server as a VPN: a packet tunnel,
+whose packets lwIP turns back into TCP connections, with widgets and a Control Center toggle.
+
 | Part | Where | What it does |
 | --- | --- | --- |
 | Core (`Sources/ProxyCore`) | In both | Shadowsocks and VLESS: the links, the protocols, the connections to the servers; the config. No NetworkExtension, so it is tested on its own |
 | Proxy (`Sources/RouteyProxy`) | The system extension | Picks the flows to take and relays each through its server |
 | App (`Sources/Routey`) | The user's Mac | Installs the extension, turns each proxy on and off, the menu bar item and the panel |
+| Packet stack (`Sources/CLwIP`, `Sources/PacketStack`) | The iOS tunnel | lwIP and the relays: the tun's packets through the VLESS server. No NetworkExtension, so it is tested on the Mac |
+| iOS (`ios/`) | The user's iPhone | The app, the packet tunnel extension, the widgets and the control |
 
 ## Repo Structure:
 
@@ -40,8 +45,8 @@ Network.framework and CryptoKit. It is under the MIT license.
   and short ID sealed under a key from the server's public key; the server proves it has that
   key with the HMAC in its certificate's signature. ML-KEM is CryptoKit's, so VLESS needs macOS 26.
 - `VLESS.swift`: a server read from a `vless://` link (REALITY over TCP, the xtls-rprx-vision flow
-  or none), the request header, and Vision: padded blocks while the app's TLS shakes hands, then
-  raw TCP once its TLS 1.3 carries data.
+  or none), the same server at an IP resolved in advance, the request header, and Vision: padded
+  blocks while the app's TLS shakes hands, then raw TCP once its TLS 1.3 carries data.
 - `VLESSTunnel.swift`: `VLESSConnection`, a TCP connection or one UDP target's packets through the
   server, and `VLESSPacketTunnel`, a UDP flow with a connection per target.
 - `DNSLookup.swift`: a DNS query asked of 1.1.1.1 over TCP through either server.
@@ -77,6 +82,42 @@ Network.framework and CryptoKit. It is under the MIT license.
   when asked: it checks the download is signed by the team (44R7KF7645), swaps the app and
   restarts it.
 
+### Sources/CLwIP and Sources/PacketStack
+
+- `Sources/CLwIP`: lwIP 2.2.1, vendored, with `COPYING` and `PATCHES.md` (four patches, marked
+  `Routey:`, so it takes connections to every address and port). `include/lwipopts.h` is its
+  config (no logs, memory from malloc as it is used); `port/stack.c` is the small C API in
+  `include/CLwIP.h`, all Swift sees, since lwIP's own headers clash with the system's.
+- `PacketStack.swift`: drives lwIP on one queue (it is one per process): packets in, packets out
+  in batches, its timers, new connections, and UDP datagrams, which never reach lwIP.
+- `StackTCPConnection.swift`: an app's TCP connection from lwIP. Its window only opens again as
+  the reader takes the data, so a slow server slows the app instead of filling memory.
+- `IPPacket.swift`: UDP datagrams read from IPv4 and IPv6 packets, and built back with checksums.
+- `Relays.swift`: the Mac's relays, over the stack: TCP waits briefly for the app's first data and
+  takes a TLS server name in it as the target; each app's UDP socket gets one relay, and DNS goes
+  to 1.1.1.1 through the server.
+- `PacketProxy.swift`: the stack, a relay for each connection and socket, and the totals. DNS sent
+  to the tunnel's own address (198.18.0.2) goes to the public resolver.
+
+### ios
+
+- `Routey.xcodeproj`: written by hand, with synchronized folders and the package at `..`. The app
+  target is `RouteyApp` (the package already has a `Routey`), its product `Routey.app`; the shared
+  scheme is `Routey`.
+- `App`: the SwiftUI app, a grouped form like the Mac's panel: the VPN switch and its status, the
+  live numbers while it shows, the server (pasted), importing and exporting the config. Also the
+  App Shortcuts.
+- `Tunnel/PacketTunnelProvider.swift`: resolves the server before its DNS is in place, routes
+  everything but the local network into the tunnel, and feeds `packetFlow` to a `PacketProxy`.
+- `Widgets`: the Home Screen and Lock Screen widgets, with a button that connects or disconnects,
+  and the Control Center toggle.
+- `Shared`: compiled into the app and the widgets: `TunnelControl` (the VPN configuration:
+  connecting enables it and turns on demand on, disconnecting turns on demand off first), the
+  config in the app group, the intents, the status line and the route icon as a SwiftUI shape.
+- `Config`: the entitlements and the extensions' Info.plists.
+- `scripts/testflight.sh`: archives, signs with the Apple Distribution certificate and the
+  `routey-ios*` profiles, and uploads to TestFlight.
+
 ### Resources, assets and scripts
 
 - `Resources/AppIcon.icon`: the app icon, made for Icon Composer: Lucide's `route`, white on a
@@ -84,8 +125,8 @@ Network.framework and CryptoKit. It is under the MIT license.
 - `Resources/App.entitlements`, `Resources/Proxy.entitlements`: what each is allowed; the
   extension is sandboxed. `Resources/Profiles`: their Developer ID provisioning profiles, which
   grant the Network Extension. They aren't secret: they ship inside the app. The `routey-ios*`
-  ones are the App Store profiles for the coming iOS app, its tunnel and its widgets, which share
-  the app group `group.org.routey.routey`.
+  ones are the App Store profiles for the iOS app, its tunnel and its widgets, which share the app
+  group `group.org.routey.routey`.
 - `scripts/build-app.sh`: builds `build/Routey.app` with the extension in
   `Contents/Library/SystemExtensions`, universal, signed with `SIGN_IDENTITY` and the profiles,
   or ad hoc without it (then macOS won't load the extension).
@@ -116,7 +157,10 @@ Network.framework and CryptoKit. It is under the MIT license.
 Needs a Mac with Xcode 26 or later (for the icon), and macOS 15 or later.
 
     scripts/build-app.sh --open      # builds and opens build/Routey.app
-    swift test                       # the core's tests
+    swift test                       # the core's and the packet stack's tests
+    xcodebuild build -project ios/Routey.xcodeproj -scheme Routey \
+        -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO
+    DESTINATION=export ios/scripts/testflight.sh   # signs the iOS app without uploading it
 
 `brew install shadowsocks-rust xray` for the tests that talk to real servers (`ssserver`, and Xray
 with REALITY in front of VLESS); without them they are skipped. macOS only runs the extension
@@ -124,8 +168,13 @@ signed with the Developer ID and its profile, from an app in /Applications: for 
 import the certificate from `~/apple-signing` into a keychain, build with `SIGN_IDENTITY` (and
 `SIGN_KEYCHAIN`), and copy the app to /Applications.
 
-`build.yml` tests and builds pull requests. On `main`, `release.yml` tests, builds, signs,
-notarizes and publishes the app as a GitHub release; it needs the repository's signing secrets
+The iOS VPN doesn't run in the Simulator: open `ios/Routey.xcodeproj` and run it on an iPhone with
+iOS 26, signed automatically for development. `testflight.sh` needs the Apple Distribution
+certificate in a keychain.
+
+`build.yml` tests and builds pull requests, the iOS app too. On `main`, `ios.yml` uploads the iOS
+app to TestFlight, and `release.yml` tests, builds, signs, notarizes and publishes the Mac app as a
+GitHub release; it needs the repository's signing secrets
 (`APPLE_CERTIFICATE` and `APPLE_CERTIFICATE_PASSWORD`, the Developer ID Application certificate as
 a base64 .p12 and its password; `APPLE_API_KEY`, `APPLE_API_KEY_ID` and `APPLE_API_ISSUER_ID`, an
 App Store Connect API key) and the profiles. `APPLE_DISTRIBUTION_CERTIFICATE` and
@@ -142,8 +191,8 @@ sentence describing the change:
     proxy: Send TLS server names to the server
     app: Show the server's latency
 
-The parts are `core`, `proxy` and `app`. Use `ci` for the workflows and scripts and `docs` for
-README.md and AGENTS.md.
+The parts are `core`, `proxy`, `app` and `ios`; the packet stack is `core`. Use `ci` for the
+workflows and scripts and `docs` for README.md and AGENTS.md.
 
 The title should be concise. The description explains the work in more detail (only if
 required) while still being concise. Use simple language, do not try to sound smart.
