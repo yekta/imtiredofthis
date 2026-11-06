@@ -39,13 +39,13 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
         proxy.start()
         self.proxy = proxy
         readPackets(into: proxy)
-        reloadWidgetsSoon()
+        reloadWidgets()
     }
 
     override func stopTunnel(with reason: NEProviderStopReason) async {
         proxy?.stop()
         proxy = nil
-        reloadWidgetsSoon()
+        reloadWidgets()
     }
 
     override func handleAppMessage(_ messageData: Data) async -> Data? {
@@ -66,12 +66,10 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
         }
     }
 
-    /// Once the VPN's status has caught up with what just happened.
-    private func reloadWidgetsSoon() {
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
-            WidgetCenter.shared.reloadAllTimelines()
-            ControlCenter.shared.reloadAllControls()
-        }
+    /// The widgets and the control only learn the VPN changed when told.
+    private func reloadWidgets() {
+        WidgetCenter.shared.reloadAllTimelines()
+        ControlCenter.shared.reloadAllControls()
     }
 
     private static func settings(serverIP: String) -> NEPacketTunnelNetworkSettings {

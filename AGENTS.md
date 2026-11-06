@@ -105,7 +105,7 @@ whose packets lwIP turns back into TCP connections, with widgets and a Control C
   target is `RouteyApp` (the package already has a `Routey`), its product `Routey.app`; the shared
   scheme is `Routey`.
 - `App`: the SwiftUI app, a grouped form like the Mac's panel: the VPN switch and its status, the
-  live numbers while it shows, the server (pasted), importing and exporting the config. Also the
+  live numbers while it shows, the server's link, importing and exporting the config. Also the
   App Shortcuts.
 - `Tunnel/PacketTunnelProvider.swift`: resolves the server before its DNS is in place, routes
   everything but the local network into the tunnel, and feeds `packetFlow` to a `PacketProxy`.

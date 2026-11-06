@@ -35,7 +35,9 @@ struct StatusProvider: TimelineProvider {
     func getTimeline(in context: Context, completion: @escaping (Timeline<StatusEntry>) -> Void) {
         Task {
             let entry = await StatusEntry.now()
-            completion(Timeline(entries: [entry], policy: .after(Date().addingTimeInterval(30 * 60))))
+            // While it connects or disconnects, look again soon for where it lands.
+            let settling = entry.state == .connecting || entry.state == .disconnecting
+            completion(Timeline(entries: [entry], policy: .after(Date().addingTimeInterval(settling ? 3 : 30 * 60))))
         }
     }
 }
@@ -116,35 +118,34 @@ private struct StatusView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    @ViewBuilder private var button: some View {
-        if entry.state == .notSetUp {
-            // Tapping the widget opens the app.
-            Text("Set Up")
+    private var button: some View {
+        toggle {
+            Text(buttonTitle)
                 .font(.subheadline.weight(.semibold))
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, 8)
-                .background(.tint, in: .capsule)
-                .foregroundStyle(.white)
-                .widgetAccentable()
-        } else {
-            Button(intent: ToggleTunnelIntent()) {
-                Text(buttonTitle)
-                    .font(.subheadline.weight(.semibold))
-                    .frame(maxWidth: .infinity)
-            }
-            .buttonStyle(.borderedProminent)
-            .buttonBorderShape(.capsule)
-            .tint(isConnected ? .green : nil)
-            .widgetAccentable()
         }
+        .buttonStyle(.borderedProminent)
+        .buttonBorderShape(.capsule)
+        .tint(isConnected ? .green : nil)
+        .widgetAccentable()
     }
 
     private var buttonTitle: String {
         switch entry.state {
+        case .notSetUp: return "Set Up"
         case .connecting: return "Connecting…"
         case .disconnecting: return "Disconnecting…"
         case .connected: return "Disconnect"
-        case .off, .notSetUp: return "Connect"
+        case .off: return "Connect"
+        }
+    }
+
+    /// Connecting opens Routey and connects there; disconnecting happens where it is.
+    @ViewBuilder private func toggle(@ViewBuilder label: () -> some View) -> some View {
+        if entry.state.isOn {
+            Button(intent: DisconnectIntent(), label: label)
+        } else {
+            Button(intent: ConnectIntent(), label: label)
         }
     }
 
@@ -156,7 +157,7 @@ private struct StatusView: View {
                     .padding(12)
             }
         } else {
-            Button(intent: ToggleTunnelIntent()) {
+            toggle {
                 ZStack {
                     if isConnected {
                         Circle()

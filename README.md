@@ -35,12 +35,12 @@ It checks for new versions by itself and offers them in its menu and panel: **In
 
 Routey for iOS sends **the whole device** through your VLESS server, as a VPN. It needs iOS 26 or later, and comes through TestFlight for now.
 
-1. Copy your `vless://` link, open Routey and tap **Paste**. Or import the config file from your Mac.
+1. Open Routey and enter your `vless://` link under **Server**. Or import the config file from your Mac.
 2. Turn on **VPN**. The first time, iOS asks to add Routey's VPN configuration: choose Allow.
 
 Every app goes through the server over TCP and UDP, DNS included; your local network (AirDrop, your router) stays direct. iOS keeps it connected through network changes until you turn it off. Shadowsocks isn't offered on iOS, since iOS can't send some apps one way and the rest another.
 
-- **Widgets.** A Home Screen widget with your server's name and a Connect button that works without opening the app, a wider one with how long it has been connected, and two for the Lock Screen.
+- **Widgets.** A Home Screen widget with your server's name and a Connect button that opens Routey and connects, a wider one with how long it has been connected, and two for the Lock Screen.
 - **Control Center.** A Routey toggle, which also goes on the Lock Screen or the Action button.
 - **Shortcuts and Siri.** "Connect Routey" and "Disconnect Routey".
 

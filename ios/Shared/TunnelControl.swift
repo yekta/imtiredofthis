@@ -52,8 +52,12 @@ enum TunnelControl {
     static let providerBundleIdentifier = "org.routey.routey.tunnel"
 
     static func state() async -> TunnelState {
+        state(of: try? await loadManager())
+    }
+
+    static func state(of manager: NETunnelProviderManager?) -> TunnelState {
         guard ConfigStore.server != nil else { return .notSetUp }
-        guard let manager = try? await loadManager() else { return .off }
+        guard let manager else { return .off }
         switch manager.connection.status {
         case .connecting, .reasserting: return .connecting
         case .connected: return .connected(since: manager.connection.connectedDate)

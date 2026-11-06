@@ -16,10 +16,8 @@ struct ContentView: View {
                 ServerSection(model: model)
                 Section {
                     Button("Import Config…") { isImporting = true }
-                    if let data = try? model.exportedConfig() {
-                        ShareLink(item: ConfigFile(data: data), preview: SharePreview("Routey.json")) {
-                            Text("Export Config…")
-                        }
+                    ShareLink(item: ConfigFile(config: model.config), preview: SharePreview("Routey.json")) {
+                        Text("Export Config…")
                     }
                 } footer: {
                     Text("The same config file as Routey on the Mac. Only its VLESS server is used here.")
@@ -92,54 +90,86 @@ private struct TrafficSection: View {
 
 private struct ServerSection: View {
     @Bindable var model: AppModel
+    @State private var draft = ""
+    @State private var isEditing = false
     @State private var linkError: String?
+    @FocusState private var isFocused: Bool
 
     var body: some View {
         Section {
-            switch model.server {
-            case let .success(server):
-                LabeledContent {
+            if isEditing || model.server == nil {
+                TextField("Server link", text: $draft, prompt: Text("vless://…"), axis: .vertical)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .keyboardType(.URL)
+                    .submitLabel(.done)
+                    .focused($isFocused)
+                    .onSubmit(save)
+                if let linkError {
+                    Text(linkError)
+                        .font(.callout)
+                        .foregroundStyle(.red)
+                }
+                Button("Save", action: save)
+                    .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                if model.server != nil {
+                    Button("Cancel", role: .cancel) { isEditing = false }
+                }
+            } else {
+                switch model.server {
+                case let .success(server):
+                    LabeledContent {
+                        Button("Change", action: edit)
+                    } label: {
+                        Text(server.name ?? server.host)
+                        Text("\(server.host):\(String(server.port)) · REALITY as \(server.serverName)")
+                    }
+                case let .failure(error):
+                    LabeledContent {
+                        Button("Change", action: edit)
+                    } label: {
+                        Text("The saved link doesn't work")
+                        Text(error.localizedDescription)
+                    }
+                case nil:
                     EmptyView()
-                } label: {
-                    Text(server.name ?? server.host)
-                    Text("\(server.host):\(String(server.port)) · REALITY as \(server.serverName)")
                 }
-            case let .failure(error):
-                LabeledContent {
-                    EmptyView()
-                } label: {
-                    Text("The saved link doesn't work")
-                    Text(error.localizedDescription)
-                }
-            case nil:
-                Text("No server yet")
-                    .foregroundStyle(.secondary)
-            }
-            PasteButton(payloadType: String.self) { strings in
-                guard let link = strings.first else { return }
-                Task { @MainActor in
-                    linkError = model.useLink(link)
-                }
-            }
-            if let linkError {
-                Text(linkError)
-                    .font(.callout)
-                    .foregroundStyle(.red)
             }
         } header: {
             Text("Server")
         } footer: {
-            Text("Copy your VLESS server's vless:// link, then paste it here: REALITY over TCP, with the xtls-rprx-vision flow or none, like the link Xray's setup gives you.")
+            Text("Your VLESS server's vless:// link: REALITY over TCP, with the xtls-rprx-vision flow or none, like the link Xray's setup gives you.")
         }
+    }
+
+    private func edit() {
+        draft = ""
+        linkError = nil
+        isEditing = true
+        isFocused = true
+    }
+
+    private func save() {
+        let link = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !link.isEmpty else { return }
+        linkError = model.useLink(link)
+        guard linkError == nil else { return }
+        draft = ""
+        isEditing = false
+        isFocused = false
     }
 }
 
 /// The config, shared as a JSON file.
 private struct ConfigFile: Transferable {
-    let data: Data
+    let config: ProxyConfig
 
     static var transferRepresentation: some TransferRepresentation {
-        DataRepresentation(exportedContentType: .json) { $0.data }
-            .suggestedFileName("Routey.json")
+        DataRepresentation(exportedContentType: .json) { file in
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
+            return try encoder.encode(file.config)
+        }
+        .suggestedFileName("Routey.json")
     }
 }

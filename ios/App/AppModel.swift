@@ -22,28 +22,47 @@ final class AppModel {
         var serverError: String?
     }
 
-    var server: Result<VLESSServer, Error>? {
-        guard !config.vless.server.isEmpty else { return nil }
-        return Result { try VLESSServer(link: config.vless.server) }
-    }
+    /// The saved link, read once each time it changes.
+    private(set) var server: Result<VLESSServer, Error>?
 
-    @ObservationIgnored private var statusObserver: NSObjectProtocol?
+    @ObservationIgnored private var observers: [NSObjectProtocol] = []
+    /// Loaded once and kept, so its connection's status changes come here; only loaded again when
+    /// the configuration itself changes.
+    @ObservationIgnored private var manager: NETunnelProviderManager?
     @ObservationIgnored private var monitorTimer: Timer?
     @ObservationIgnored private var lastTotals: (totals: ProxyStats.Totals, at: Date)?
 
     init() {
-        statusObserver = NotificationCenter.default.addObserver(forName: .NEVPNStatusDidChange, object: nil, queue: .main) { [weak self] _ in
+        server = Self.parse(config)
+        let center = NotificationCenter.default
+        observers.append(center.addObserver(forName: .NEVPNStatusDidChange, object: nil, queue: .main) { [weak self] notification in
             MainActor.assumeIsolated {
-                self?.refresh()
-                TunnelControl.reloadWidgets()
+                guard let self, let connection = notification.object as? NEVPNConnection,
+                      connection === self.manager?.connection else { return }
+                self.updateState()
             }
+        })
+        observers.append(center.addObserver(forName: .NEVPNConfigurationChange, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated {
+                self?.reloadManager()
+            }
+        })
+        reloadManager()
+    }
+
+    func reloadManager() {
+        Task {
+            manager = try? await TunnelControl.loadManager()
+            updateState()
         }
     }
 
-    func refresh() {
-        Task {
-            state = await TunnelControl.state()
-        }
+    /// The widgets and the control are told only when where the VPN stands has changed.
+    private func updateState() {
+        let state = TunnelControl.state(of: manager)
+        guard state != self.state else { return }
+        self.state = state
+        TunnelControl.reloadWidgets()
     }
 
     func setOn(_ on: Bool) {
@@ -60,8 +79,7 @@ final class AppModel {
             } catch {
                 self.error = (error as? TunnelError).map { String(localized: $0.localizedStringResource) } ?? error.localizedDescription
             }
-            state = await TunnelControl.state()
-            TunnelControl.reloadWidgets()
+            reloadManager()
         }
     }
 
@@ -98,14 +116,9 @@ final class AppModel {
         apply(imported)
     }
 
-    func exportedConfig() throws -> Data {
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
-        return try encoder.encode(config)
-    }
-
     private func apply(_ config: ProxyConfig) {
         self.config = config
+        server = Self.parse(config)
         ConfigStore.config = config
         TunnelControl.reloadWidgets()
         Task {
@@ -114,8 +127,13 @@ final class AppModel {
             } catch {
                 self.error = error.localizedDescription
             }
-            state = await TunnelControl.state()
+            reloadManager()
         }
+    }
+
+    private static func parse(_ config: ProxyConfig) -> Result<VLESSServer, Error>? {
+        guard !config.vless.server.isEmpty else { return nil }
+        return Result { try VLESSServer(link: config.vless.server) }
     }
 
     // MARK: Live numbers
@@ -123,7 +141,7 @@ final class AppModel {
     /// While the app shows: the speeds every second, the server's latency every five.
     func startMonitoring() {
         stopMonitoring()
-        refresh()
+        updateState()
         lastTotals = nil
         var tick = 0
         refreshStats()
@@ -146,20 +164,18 @@ final class AppModel {
     }
 
     private func refreshStats() {
-        Task {
-            guard case .connected = state,
-                  let session = try? await TunnelControl.loadManager()?.connection as? NETunnelProviderSession,
-                  let message = try? JSONEncoder().encode(ProviderMessage.stats) else {
-                traffic.upload = 0
-                traffic.download = 0
-                traffic.connections = 0
-                return
-            }
-            try? session.sendProviderMessage(message) { response in
-                guard let response, let stats = try? JSONDecoder().decode(ProxyStats.self, from: response) else { return }
-                DispatchQueue.main.async {
-                    self.received(stats.vless)
-                }
+        guard case .connected = state, let session = manager?.connection as? NETunnelProviderSession,
+              let message = try? JSONEncoder().encode(ProviderMessage.stats) else {
+            guard traffic.upload != 0 || traffic.download != 0 || traffic.connections != 0 else { return }
+            traffic.upload = 0
+            traffic.download = 0
+            traffic.connections = 0
+            return
+        }
+        try? session.sendProviderMessage(message) { [weak self] response in
+            guard let response, let stats = try? JSONDecoder().decode(ProxyStats.self, from: response) else { return }
+            DispatchQueue.main.async {
+                self?.received(stats.vless)
             }
         }
     }
