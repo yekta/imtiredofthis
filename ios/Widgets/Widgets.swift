@@ -48,11 +48,21 @@ struct StatusWidget: Widget {
     var body: some WidgetConfiguration {
         StaticConfiguration(kind: "org.routey.routey.status", provider: StatusProvider()) { entry in
             StatusView(entry: entry)
-                .containerBackground(.fill.tertiary, for: .widget)
+                .containerBackground(for: .widget) { WidgetBackground() }
         }
         .configurationDisplayName("Routey")
         .description("Connect with one tap, and see whether Routey is on.")
         .supportedFamilies([.systemSmall, .systemMedium, .accessoryCircular, .accessoryRectangular])
+    }
+}
+
+/// White, or in the dark just above black: iOS lights every widget background but pure black, so
+/// this comes out like Calendar's.
+private struct WidgetBackground: View {
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        colorScheme == .dark ? Color(white: 0.004) : Color.white
     }
 }
 
@@ -102,10 +112,8 @@ private struct StatusView: View {
     private var tile: some View {
         VStack(alignment: .leading) {
             RouteIcon()
-                .foregroundStyle(.white)
-                .padding(6)
-                .frame(width: 32, height: 32)
-                .background(isConnected ? Color.green : Color.secondary, in: .rect(cornerRadius: 8))
+                .foregroundStyle(isConnected ? .green : .primary)
+                .frame(width: 26, height: 26)
                 .widgetAccentable()
             Spacer(minLength: 4)
             Text(entry.name)
@@ -142,7 +150,6 @@ private struct StatusView: View {
         }
     }
 
-    /// Connecting opens Routey and connects there; disconnecting happens where it is.
     @ViewBuilder private func toggle(@ViewBuilder label: () -> some View) -> some View {
         if entry.state.isOn {
             Button(intent: DisconnectIntent(), label: label)

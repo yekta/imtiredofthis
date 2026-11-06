@@ -40,7 +40,7 @@ Routey for iOS sends **the whole device** through your VLESS server, as a VPN. I
 
 Every app goes through the server over TCP and UDP, DNS included; your local network (AirDrop, your router) stays direct. iOS keeps it connected through network changes until you turn it off. Shadowsocks isn't offered on iOS, since iOS can't send some apps one way and the rest another.
 
-- **Widgets.** A Home Screen widget with your server's name and a Connect button that opens Routey and connects, a wider one with how long it has been connected, and two for the Lock Screen.
+- **Widgets.** A Home Screen widget with your server's name and a Connect button that connects without opening Routey, a wider one with how long it has been connected, and two for the Lock Screen.
 - **Control Center.** A Routey toggle, which also goes on the Lock Screen or the Action button.
 - **Shortcuts and Siri.** "Connect Routey" and "Disconnect Routey".
 
