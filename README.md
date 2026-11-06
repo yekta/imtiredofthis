@@ -1,6 +1,6 @@
 <img src="assets/favicon.svg" width="64" height="64" alt="">
 
-# imtiredofthis
+# Routey
 
 Two proxies in one menu bar app: **Shadowsocks** for the Mac apps you choose, and **VLESS** over REALITY for every other app. Each has its own tab, its own server and its own switch. Under the MIT license.
 
@@ -18,16 +18,16 @@ VLESS: REALITY over TCP (`security=reality`, `type=tcp`), with the `xtls-rprx-vi
 
 ## Install
 
-Download `imtiredofthis.zip` from the [latest release](https://github.com/yekta/imtiredofthis/releases/latest), unzip it and move **imtiredofthis** to Applications. Or paste this in Terminal, which does the same and opens it:
+Download `Routey.zip` from the [latest release](https://github.com/yekta/routey/releases/latest), unzip it and move **Routey** to Applications. Or paste this in Terminal, which does the same and opens it:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/yekta/imtiredofthis/main/scripts/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/yekta/routey/main/scripts/install.sh | sh
 ```
 
 Then, from its menu bar icon:
 
 1. In the Shadowsocks tab, paste your server's `ss://` link and add the apps that should go through it. Or, in the VLESS tab, paste your `vless://` link.
-2. Turn it on with the tab's switch. The first time, macOS asks you to allow the proxy: in **System Settings → General → Login Items & Extensions → Network Extensions**, turn on imtiredofthis, then allow it to add its proxy configuration.
+2. Turn it on with the tab's switch. The first time, macOS asks you to allow the proxy: in **System Settings → General → Login Items & Extensions → Network Extensions**, turn on Routey, then allow it to add its proxy configuration.
 
 It checks for new versions by itself and offers them in its menu and panel: **Install and Restart** updates it in place.
 
@@ -56,11 +56,11 @@ The older files, with just `server` and `apps`, still import. `apps` are bundle 
 Needs Xcode 26 or later.
 
 ```sh
-scripts/build-app.sh --open   # builds build/imtiredofthis.app and opens it
+scripts/build-app.sh --open   # builds build/Routey.app and opens it
 swift test                    # tests the core, and talks to real servers if shadowsocks-rust and xray are installed
 ```
 
-macOS only loads the proxy extension when it is signed with a Developer ID and its provisioning profile, and the app is in /Applications. Every push to `main` is built, signed, notarized and published as a [GitHub release](https://github.com/yekta/imtiredofthis/releases).
+macOS only loads the proxy extension when it is signed with a Developer ID and its provisioning profile, and the app is in /Applications. Every push to `main` is built, signed, notarized and published as a [GitHub release](https://github.com/yekta/routey/releases).
 
 ## License
 

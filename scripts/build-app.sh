@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Builds imtiredofthis.app, with its proxy extension inside, into build/. Needs Xcode 26 or later,
+# Builds Routey.app, with its proxy extension inside, into build/. Needs Xcode 26 or later,
 # for the icon.
 #
 #   scripts/build-app.sh [--open]
@@ -12,8 +12,8 @@
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
-APP="build/imtiredofthis.app"
-BUNDLE_ID="com.yekta.imtiredofthis"
+APP="build/Routey.app"
+BUNDLE_ID="org.routey.routey"
 PROXY_ID="$BUNDLE_ID.proxy"
 TEAM_ID="44R7KF7645"
 PROXY="$APP/Contents/Library/SystemExtensions/$PROXY_ID.systemextension"
@@ -29,9 +29,9 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources" "$PROXY/Contents/MacOS"
 # SwiftPM stamps the binaries as built with the SDK of their deployment target, and macOS then
 # draws the app in the old style. Stamping the real SDK gives it the current controls and Liquid Glass.
 xcrun vtool -set-build-version macos 15.0 "$SDK_VERSION" -replace \
-    -output "$APP/Contents/MacOS/imtiredofthis" "$BIN/imtiredofthis"
+    -output "$APP/Contents/MacOS/Routey" "$BIN/Routey"
 xcrun vtool -set-build-version macos 15.0 "$SDK_VERSION" -replace \
-    -output "$PROXY/Contents/MacOS/$PROXY_ID" "$BIN/ImtiredofthisProxy"
+    -output "$PROXY/Contents/MacOS/$PROXY_ID" "$BIN/RouteyProxy"
 
 # The Icon Composer icon becomes Assets.car for macOS 26, and AppIcon.icns for the ones before.
 xcrun actool "$PWD/Resources/AppIcon.icon" --compile "$PWD/$APP/Contents/Resources" \
@@ -44,9 +44,9 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-    <key>CFBundleName</key><string>imtiredofthis</string>
-    <key>CFBundleDisplayName</key><string>imtiredofthis</string>
-    <key>CFBundleExecutable</key><string>imtiredofthis</string>
+    <key>CFBundleName</key><string>Routey</string>
+    <key>CFBundleDisplayName</key><string>Routey</string>
+    <key>CFBundleExecutable</key><string>Routey</string>
     <key>CFBundleIdentifier</key><string>$BUNDLE_ID</string>
     <key>CFBundlePackageType</key><string>APPL</string>
     <key>CFBundleShortVersionString</key><string>$VERSION</string>
@@ -68,8 +68,8 @@ cat > "$PROXY/Contents/Info.plist" <<PLIST
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-    <key>CFBundleName</key><string>imtiredofthis Proxy</string>
-    <key>CFBundleDisplayName</key><string>imtiredofthis</string>
+    <key>CFBundleName</key><string>Routey Proxy</string>
+    <key>CFBundleDisplayName</key><string>Routey</string>
     <key>CFBundleExecutable</key><string>$PROXY_ID</string>
     <key>CFBundleIdentifier</key><string>$PROXY_ID</string>
     <key>CFBundlePackageType</key><string>SYSX</string>
@@ -93,8 +93,8 @@ PLIST
 if [ -n "${SIGN_IDENTITY:-}" ]; then
     KEYCHAIN=()
     if [ -n "${SIGN_KEYCHAIN:-}" ]; then KEYCHAIN=(--keychain "$SIGN_KEYCHAIN"); fi
-    cp Resources/Profiles/imtiredofthis.provisionprofile "$APP/Contents/embedded.provisionprofile"
-    cp Resources/Profiles/imtiredofthis-proxy.provisionprofile "$PROXY/Contents/embedded.provisionprofile"
+    cp Resources/Profiles/routey.provisionprofile "$APP/Contents/embedded.provisionprofile"
+    cp Resources/Profiles/routey-proxy.provisionprofile "$PROXY/Contents/embedded.provisionprofile"
     codesign --force --options runtime --timestamp ${KEYCHAIN[@]+"${KEYCHAIN[@]}"} --sign "$SIGN_IDENTITY" \
         --entitlements Resources/Proxy.entitlements "$PROXY"
     codesign --force --options runtime --timestamp ${KEYCHAIN[@]+"${KEYCHAIN[@]}"} --sign "$SIGN_IDENTITY" \
