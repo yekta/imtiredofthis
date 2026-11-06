@@ -19,6 +19,12 @@ import Testing
         #expect(!server.allowsUDP443)
     }
 
+    @Test func connectingToAnIP() throws {
+        let server = try VLESSServer(link: Self.link.replacingOccurrences(of: "203.0.113.7", with: "box.example.com")).connecting(to: "198.51.100.4")
+        #expect(server.address == Address(name: "198.51.100.4", port: 443))
+        #expect(server.serverName == "www.samsung.com")
+    }
+
     @Test func withoutFlowOrShortID() throws {
         let server = try VLESSServer(link: "vless://92682d6d-92cc-46ca-a40f-8d5d2180fa0b@[2001:db8::1]:8443/?security=reality&sni=example.com&pbk=BLOnn-PVGqcXM1JMABMeht82lEUUR_dr0gsyGtNEEwI")
         #expect(server.host == "2001:db8::1")

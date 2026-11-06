@@ -1,0 +1,4 @@
+module CLwIP {
+    header "CLwIP.h"
+    export *
+}

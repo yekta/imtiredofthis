@@ -111,32 +111,32 @@ private func pattern(_ count: Int) -> Data {
     }
 }
 
-@Suite struct TLSTests {
-    private func clientHello(serverName: String?) -> Data {
-        func u16(_ value: Int) -> Data { Data([UInt8(value >> 8), UInt8(value & 0xFF)]) }
-        var extensions = Data([0x00, 0x2B, 0x00, 0x03, 0x02, 0x03, 0x04])
-        if let serverName {
-            let name = Data(serverName.utf8)
-            var list = u16(name.count + 3)
-            list.append(0)
-            list.append(u16(name.count))
-            list.append(name)
-            extensions.append(u16(0))
-            extensions.append(u16(list.count))
-            extensions.append(list)
-        }
-        var body = Data([0x03, 0x03])
-        body.append(Data(repeating: 7, count: 32))
-        body.append(Data([0, 0, 2, 0x13, 0x01, 1, 0]))
-        body.append(u16(extensions.count))
-        body.append(extensions)
-        var record = Data([0x16, 0x03, 0x01])
-        record.append(u16(body.count + 4))
-        record.append(Data([0x01, 0, UInt8(body.count >> 8), UInt8(body.count & 0xFF)]))
-        record.append(body)
-        return record
+func clientHello(serverName: String?) -> Data {
+    func u16(_ value: Int) -> Data { Data([UInt8(value >> 8), UInt8(value & 0xFF)]) }
+    var extensions = Data([0x00, 0x2B, 0x00, 0x03, 0x02, 0x03, 0x04])
+    if let serverName {
+        let name = Data(serverName.utf8)
+        var list = u16(name.count + 3)
+        list.append(0)
+        list.append(u16(name.count))
+        list.append(name)
+        extensions.append(u16(0))
+        extensions.append(u16(list.count))
+        extensions.append(list)
     }
+    var body = Data([0x03, 0x03])
+    body.append(Data(repeating: 7, count: 32))
+    body.append(Data([0, 0, 2, 0x13, 0x01, 1, 0]))
+    body.append(u16(extensions.count))
+    body.append(extensions)
+    var record = Data([0x16, 0x03, 0x01])
+    record.append(u16(body.count + 4))
+    record.append(Data([0x01, 0, UInt8(body.count >> 8), UInt8(body.count & 0xFF)]))
+    record.append(body)
+    return record
+}
 
+@Suite struct TLSTests {
     @Test func serverName() {
         #expect(TLS.serverName(in: clientHello(serverName: "Gateway.Discord.gg") + Data("more".utf8)) == "gateway.discord.gg")
     }

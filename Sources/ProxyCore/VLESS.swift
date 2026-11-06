@@ -3,7 +3,7 @@ import Foundation
 /// A VLESS server behind REALITY, read from a `vless://` link.
 public struct VLESSServer: Hashable, Sendable {
     public let id: UUID
-    public let host: String
+    public private(set) var host: String
     public let port: UInt16
     public let name: String?
     /// The site REALITY passes for, the ClientHello's server name.
@@ -17,6 +17,13 @@ public struct VLESSServer: Hashable, Sendable {
     let allowsUDP443: Bool
 
     public var address: Address { Address(name: host, port: port) }
+
+    /// The same server at an IP address its host resolved to. REALITY's server name stays.
+    public func connecting(to ip: String) -> VLESSServer {
+        var server = self
+        server.host = ip
+        return server
+    }
 
     static let visionFlow = "xtls-rprx-vision"
 

@@ -31,9 +31,22 @@ Then, from its menu bar icon:
 
 It checks for new versions by itself and offers them in its menu and panel: **Install and Restart** updates it in place.
 
+## iPhone and iPad
+
+Routey for iOS sends **the whole device** through your VLESS server, as a VPN. It needs iOS 26 or later, and comes through TestFlight for now.
+
+1. Copy your `vless://` link, open Routey and tap **Paste**. Or import the config file from your Mac.
+2. Turn on **VPN**. The first time, iOS asks to add Routey's VPN configuration: choose Allow.
+
+Every app goes through the server over TCP and UDP, DNS included; your local network (AirDrop, your router) stays direct. iOS keeps it connected through network changes until you turn it off. Shadowsocks isn't offered on iOS, since iOS can't send some apps one way and the rest another.
+
+- **Widgets.** A Home Screen widget with your server's name and a Connect button that works without opening the app, a wider one with how long it has been connected, and two for the Lock Screen.
+- **Control Center.** A Routey toggle, which also goes on the Lock Screen or the Action button.
+- **Shortcuts and Siri.** "Connect Routey" and "Disconnect Routey".
+
 ## Config file
 
-**Export Config…** and **Import Config…** save and load the setup as JSON. Importing brings the servers and apps; what is on stays as it is.
+**Export Config…** and **Import Config…** save and load the setup as JSON. Importing brings the servers and apps; what is on stays as it is. The iPhone app reads the same file and uses its VLESS server.
 
 ```json
 {
@@ -58,10 +71,11 @@ Needs Xcode 26 or later.
 ```sh
 scripts/build-app.sh --open   # builds build/Routey.app and opens it
 swift test                    # tests the core, and talks to real servers if shadowsocks-rust and xray are installed
+open ios/Routey.xcodeproj     # the iOS app; run it on an iPhone, since a VPN doesn't run in the Simulator
 ```
 
-macOS only loads the proxy extension when it is signed with a Developer ID and its provisioning profile, and the app is in /Applications. Every push to `main` is built, signed, notarized and published as a [GitHub release](https://github.com/yekta/routey/releases).
+macOS only loads the proxy extension when it is signed with a Developer ID and its provisioning profile, and the app is in /Applications. Every push to `main` is built, signed, notarized and published as a [GitHub release](https://github.com/yekta/routey/releases), and the iOS app is uploaded to TestFlight.
 
 ## License
 
-MIT. The icon is [Lucide](https://lucide.dev)'s `route`, under the ISC license.
+MIT. The icon is [Lucide](https://lucide.dev)'s `route`, under the ISC license. The iOS app's TCP/IP stack is [lwIP](https://savannah.nongnu.org/projects/lwip/), under the BSD license (`Sources/CLwIP/COPYING`).

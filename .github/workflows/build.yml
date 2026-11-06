@@ -1,7 +1,7 @@
 name: Build
 
-# Tests and builds the app on pull requests that change it. Main is built and published by
-# release.yml.
+# Tests and builds the Mac app, and builds the iOS app, on pull requests that change them. Main is
+# published by release.yml and, for iOS, ios.yml.
 on:
   pull_request:
     paths:
@@ -10,6 +10,7 @@ on:
       - Resources/**
       - Package.swift
       - scripts/**
+      - ios/**
       - .github/workflows/build.yml
   workflow_dispatch:
 
@@ -45,3 +46,14 @@ jobs:
           name: Routey
           path: Routey.zip
           retention-days: 7
+
+  ios:
+    runs-on: macos-26
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Build the iOS app for the simulator
+        run: |
+          xcodebuild build -project ios/Routey.xcodeproj -scheme Routey \
+            -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO
