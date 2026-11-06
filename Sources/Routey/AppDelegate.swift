@@ -22,7 +22,7 @@ final class AppActions: NSObject {
     @objc func showAbout() {
         NSApp.activate()
         let link = NSAttributedString(
-            string: "github.com/yekta/imtiredofthis",
+            string: "github.com/yekta/routey",
             attributes: [.link: Updater.repository, .font: NSFont.systemFont(ofSize: NSFont.smallSystemFontSize)]
         )
         NSApp.orderFrontStandardAboutPanel(options: [.credits: link])
@@ -65,13 +65,13 @@ enum MainMenu {
         let main = NSMenu()
 
         let app = NSMenu()
-        app.addItem(item("About imtiredofthis", #selector(AppActions.showAbout), target: actions))
+        app.addItem(item("About Routey", #selector(AppActions.showAbout), target: actions))
         app.addItem(item("Check for Updates…", #selector(AppActions.checkForUpdates), target: actions))
         app.addItem(.separator())
         app.addItem(item("Settings…", #selector(AppActions.showSettings), key: ",", target: actions))
         app.addItem(.separator())
-        app.addItem(item("Hide imtiredofthis", #selector(NSApplication.hide(_:)), key: "h"))
-        app.addItem(item("Quit imtiredofthis", #selector(NSApplication.terminate(_:)), key: "q"))
+        app.addItem(item("Hide Routey", #selector(NSApplication.hide(_:)), key: "h"))
+        app.addItem(item("Quit Routey", #selector(NSApplication.terminate(_:)), key: "q"))
 
         let edit = NSMenu(title: "Edit")
         edit.addItem(item("Undo", Selector(("undo:")), key: "z"))
@@ -86,7 +86,7 @@ enum MainMenu {
         window.addItem(item("Close", #selector(NSWindow.performClose(_:)), key: "w"))
         window.addItem(item("Minimize", #selector(NSWindow.performMiniaturize(_:)), key: "m"))
 
-        for (title, menu) in [("imtiredofthis", app), ("Edit", edit), ("Window", window)] {
+        for (title, menu) in [("Routey", app), ("Edit", edit), ("Window", window)] {
             let holder = NSMenuItem(title: title, action: nil, keyEquivalent: "")
             holder.submenu = menu
             main.addItem(holder)

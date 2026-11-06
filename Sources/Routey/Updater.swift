@@ -6,9 +6,9 @@ import Observation
 @MainActor
 @Observable
 final class Updater {
-    static let repository = URL(string: "https://github.com/yekta/imtiredofthis")!
-    private static let latest = URL(string: "https://api.github.com/repos/yekta/imtiredofthis/releases/latest")!
-    private static let assetName = "imtiredofthis.zip"
+    static let repository = URL(string: "https://github.com/yekta/routey")!
+    private static let latest = URL(string: "https://api.github.com/repos/yekta/routey/releases/latest")!
+    private static let assetName = "Routey.zip"
     /// An update must be signed by the same team as the releases.
     private static let teamID = "44R7KF7645"
     private static let interval: TimeInterval = 6 * 60 * 60
@@ -59,12 +59,12 @@ final class Updater {
         do {
             try await refresh()
             guard let available else {
-                present(message: "imtiredofthis is up to date", detail: "Version \(Self.currentVersion) is the latest.")
+                present(message: "Routey is up to date", detail: "Version \(Self.currentVersion) is the latest.")
                 return
             }
             let alert = NSAlert()
-            alert.messageText = "imtiredofthis \(available.version) is available"
-            alert.informativeText = "You have version \(Self.currentVersion). imtiredofthis restarts once it is installed."
+            alert.messageText = "Routey \(available.version) is available"
+            alert.informativeText = "You have version \(Self.currentVersion). Routey restarts once it is installed."
             alert.addButton(withTitle: "Install and Restart")
             alert.addButton(withTitle: "Later")
             NSApp.activate()
@@ -83,7 +83,7 @@ final class Updater {
             try await install(from: asset.browserDownloadURL)
         } catch {
             setInstalling(false)
-            present(message: "Couldn't update imtiredofthis", detail: error.localizedDescription)
+            present(message: "Couldn't update Routey", detail: error.localizedDescription)
         }
     }
 
@@ -110,13 +110,13 @@ final class Updater {
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         try Self.run("/usr/bin/ditto", ["-x", "-k", download.path, folder.path])
-        let update = folder.appendingPathComponent("imtiredofthis.app")
+        let update = folder.appendingPathComponent("Routey.app")
         guard FileManager.default.fileExists(atPath: update.path) else {
             throw UpdateError("The download has no app in it.")
         }
         let requirement = "anchor apple generic and certificate leaf[subject.OU] = \"\(Self.teamID)\""
         guard (try? Self.run("/usr/bin/codesign", ["--verify", "--deep", "--strict", "-R=\(requirement)", update.path])) != nil else {
-            throw UpdateError("The download isn't signed by imtiredofthis's developer.")
+            throw UpdateError("The download isn't signed by Routey's developer.")
         }
 
         let swap = """

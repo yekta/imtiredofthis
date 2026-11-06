@@ -2,20 +2,20 @@
 import PackageDescription
 
 let package = Package(
-    name: "imtiredofthis",
+    name: "Routey",
     platforms: [.macOS(.v15)],
     products: [
-        .executable(name: "imtiredofthis", targets: ["imtiredofthis"]),
-        .executable(name: "ImtiredofthisProxy", targets: ["ImtiredofthisProxy"]),
+        .executable(name: "Routey", targets: ["Routey"]),
+        .executable(name: "RouteyProxy", targets: ["RouteyProxy"]),
     ],
     targets: [
         .target(name: "ProxyCore"),
         .executableTarget(
-            name: "imtiredofthis",
+            name: "Routey",
             dependencies: ["ProxyCore"]
         ),
         .executableTarget(
-            name: "ImtiredofthisProxy",
+            name: "RouteyProxy",
             dependencies: ["ProxyCore"]
         ),
         .testTarget(

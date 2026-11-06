@@ -84,7 +84,7 @@ struct SettingsView: View {
     private func exportConfig() {
         let panel = NSSavePanel()
         panel.allowedContentTypes = [.json]
-        panel.nameFieldStringValue = "imtiredofthis.json"
+        panel.nameFieldStringValue = "Routey.json"
         guard panel.runModal() == .OK, let url = panel.url else { return }
         do {
             try model.exportConfig(to: url)
@@ -185,14 +185,14 @@ private struct SetupSection: View {
         switch proxy.setup {
         case .needsApproval:
             Notice(
-                title: "Allow imtiredofthis in System Settings",
-                detail: "macOS asks once. Click Open System Settings on its popup, turn on imtiredofthis and enter your password. Without the popup: System Settings → General → Login Items & Extensions → Extensions → By Category → ⓘ next to Network Extensions.",
+                title: "Allow Routey in System Settings",
+                detail: "macOS asks once. Click Open System Settings on its popup, turn on Routey and enter your password. Without the popup: System Settings → General → Login Items & Extensions → Extensions → By Category → ⓘ next to Network Extensions.",
                 color: .orange,
                 action: ("Open System Settings", proxy.openApprovalSettings)
             )
         case .needsApplicationsFolder:
             Notice(
-                title: "Move imtiredofthis to Applications",
+                title: "Move Routey to Applications",
                 detail: "macOS only installs the proxy from an app in the Applications folder. Move it there, open it again and turn it on.",
                 color: .orange
             )
@@ -204,7 +204,7 @@ private struct SetupSection: View {
             if proxy.isAskingToAddConfiguration {
                 Notice(
                     title: "Click Allow",
-                    detail: "macOS asks once whether imtiredofthis may add its proxy configuration. Click Allow on that popup, and it turns on.",
+                    detail: "macOS asks once whether Routey may add its proxy configuration. Click Allow on that popup, and it turns on.",
                     color: .orange
                 )
             }
@@ -548,7 +548,7 @@ private struct UpdateSection: View {
                 HStack {
                     Label {
                         VStack(alignment: .leading, spacing: 2) {
-                            Text("imtiredofthis \(update.version) is available")
+                            Text("Routey \(update.version) is available")
                             Text("You have \(Updater.currentVersion). It restarts once installed.")
                                 .foregroundStyle(.secondary)
                         }
@@ -579,7 +579,7 @@ private struct UpdateSection: View {
             }
             HStack {
                 Spacer()
-                Button("Quit imtiredofthis") { NSApp.terminate(nil) }
+                Button("Quit Routey") { NSApp.terminate(nil) }
             }
         }
     }

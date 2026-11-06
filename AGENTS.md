@@ -1,6 +1,6 @@
 ## What is this?
 
-imtiredofthis is a Mac menu bar app with two proxies in one, each with its own tab, server and
+Routey is a Mac menu bar app with two proxies in one, each with its own tab, server and
 switch: Shadowsocks for the apps the user picks, and VLESS over REALITY for every other app. It is
 a transparent proxy, a Network Extension running as a system extension: macOS offers it every new
 outgoing connection along with the app that opened it, and it takes those of the chosen apps
@@ -11,8 +11,8 @@ Network.framework and CryptoKit. It is under the MIT license.
 | Part | Where | What it does |
 | --- | --- | --- |
 | Core (`Sources/ProxyCore`) | In both | Shadowsocks and VLESS: the links, the protocols, the connections to the servers; the config. No NetworkExtension, so it is tested on its own |
-| Proxy (`Sources/ImtiredofthisProxy`) | The system extension | Picks the flows to take and relays each through its server |
-| App (`Sources/imtiredofthis`) | The user's Mac | Installs the extension, turns each proxy on and off, the menu bar item and the panel |
+| Proxy (`Sources/RouteyProxy`) | The system extension | Picks the flows to take and relays each through its server |
+| App (`Sources/Routey`) | The user's Mac | Installs the extension, turns each proxy on and off, the menu bar item and the panel |
 
 ## Repo Structure:
 
@@ -50,7 +50,7 @@ Network.framework and CryptoKit. It is under the MIT license.
   reads the files from before VLESS; which server a flow goes through; the messages between the
   app and the proxy, and the totals for each server.
 
-### Sources/ImtiredofthisProxy
+### Sources/RouteyProxy
 
 - `TransparentProxyProvider.swift`: claims every outgoing flow from macOS, then takes those whose
   target isn't local: through Shadowsocks when its signing identifier is a chosen app's, through
@@ -60,7 +60,7 @@ Network.framework and CryptoKit. It is under the MIT license.
   the request; a TLS server name in it replaces an IP target, so the server resolves the name. UDP
   carries each datagram to its own target and ends after two idle minutes.
 
-### Sources/imtiredofthis
+### Sources/Routey
 
 - `ProxyController.swift`: the system extension (installed, or replaced by a new version, at each
   launch once the proxy exists) and the `NETransparentProxyManager`, connected on demand so macOS
@@ -83,8 +83,10 @@ Network.framework and CryptoKit. It is under the MIT license.
   dark tile. `assets/favicon.svg` is the same icon as a flat SVG.
 - `Resources/App.entitlements`, `Resources/Proxy.entitlements`: what each is allowed; the
   extension is sandboxed. `Resources/Profiles`: their Developer ID provisioning profiles, which
-  grant the Network Extension. They aren't secret: they ship inside the app.
-- `scripts/build-app.sh`: builds `build/imtiredofthis.app` with the extension in
+  grant the Network Extension. They aren't secret: they ship inside the app. The `routey-ios*`
+  ones are the App Store profiles for the coming iOS app, its tunnel and its widgets, which share
+  the app group `group.org.routey.routey`.
+- `scripts/build-app.sh`: builds `build/Routey.app` with the extension in
   `Contents/Library/SystemExtensions`, universal, signed with `SIGN_IDENTITY` and the profiles,
   or ad hoc without it (then macOS won't load the extension).
 - `scripts/release-version.sh`: the version of a commit: `VERSION` and the number of commits.
@@ -113,7 +115,7 @@ Network.framework and CryptoKit. It is under the MIT license.
 
 Needs a Mac with Xcode 26 or later (for the icon), and macOS 15 or later.
 
-    scripts/build-app.sh --open      # builds and opens build/imtiredofthis.app
+    scripts/build-app.sh --open      # builds and opens build/Routey.app
     swift test                       # the core's tests
 
 `brew install shadowsocks-rust xray` for the tests that talk to real servers (`ssserver`, and Xray

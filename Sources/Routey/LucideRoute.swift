@@ -27,7 +27,7 @@ enum LucideRoute {
             return true
         }
         image.isTemplate = true
-        image.accessibilityDescription = "imtiredofthis"
+        image.accessibilityDescription = "Routey"
         return image
     }
 }

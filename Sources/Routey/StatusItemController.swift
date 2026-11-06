@@ -94,9 +94,9 @@ final class StatusItemController: NSObject, NSMenuDelegate, NSPopoverDelegate {
 
         menu.addItem(.separator())
         menu.addItem(actionItem("Settings…", #selector(AppActions.showSettings)))
-        menu.addItem(actionItem("About imtiredofthis", #selector(AppActions.showAbout)))
+        menu.addItem(actionItem("About Routey", #selector(AppActions.showAbout)))
         menu.addItem(.separator())
-        menu.addItem(NSMenuItem(title: "Quit imtiredofthis", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
+        menu.addItem(NSMenuItem(title: "Quit Routey", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
     }
 
     private func actionItem(_ title: String, _ action: Selector) -> NSMenuItem {

@@ -10,7 +10,7 @@ import SystemExtensions
 @MainActor
 @Observable
 final class ProxyController: NSObject {
-    static let extensionID = "com.yekta.imtiredofthis.proxy"
+    static let extensionID = "org.routey.routey.proxy"
 
     enum Setup: Equatable {
         case ready
@@ -152,7 +152,7 @@ final class ProxyController: NSObject {
         configuration.serverAddress = (shadowsocks ?? vless)?.description ?? "Not set"
         configuration.providerConfiguration = ["config": try JSONEncoder().encode(config)]
         manager.protocolConfiguration = configuration
-        manager.localizedDescription = "imtiredofthis"
+        manager.localizedDescription = "Routey"
         manager.isEnabled = enabled
         manager.onDemandRules = [NEOnDemandRuleConnect()]
         manager.isOnDemandEnabled = enabled
@@ -309,7 +309,7 @@ final class ProxyController: NSObject {
     private static func describe(_ error: Error) -> String {
         let error = error as NSError
         if error.domain == NEVPNErrorDomain, error.code == NEVPNError.configurationReadWriteFailed.rawValue {
-            return "macOS didn't let imtiredofthis add its proxy. Turn it on again and choose Allow."
+            return "macOS didn't let Routey add its proxy. Turn it on again and choose Allow."
         }
         return error.localizedDescription
     }
